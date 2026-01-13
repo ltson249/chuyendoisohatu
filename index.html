@@ -1,69 +1,57 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <title>Bản đồ số địa phương</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trang web địa điểm</title>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f2f2f2;
-            margin: 0;
-            padding: 20px;
-        }
-        h1 {
-            text-align: center;
-        }
-        .khung {
-            max-width: 900px;
-            margin: auto;
-        }
-        .dia-diem {
-            background: #ffffff;
-            padding: 15px;
-            border-radius: 10px;
-            display: flex;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        .dia-diem img {
-            width: 120px;
-            height: 90px;
-            object-fit: cover;
-            border-radius: 8px;
-        }
-        a {
-            color: #0066cc;
-            text-decoration: none;
-        }
-    </style>
+  <!-- Leaflet CSS cho bản đồ -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- CSS của bạn -->
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
-    <div class="khung">
-        <h1>📍 BẢN ĐỒ SỐ XÃ ABC</h1>
 
-        <div class="dia-diem">
-            <img src="https://via.placeholder.com/300x200">
-            <div>
-                <h3>Ủy ban nhân dân xã</h3>
-                <a href="https://maps.app.goo.gl/" target="_blank">
-                    👉 Xem trên Google Maps
-                </a>
-            </div>
-        </div>
+  <!-- Tiêu đề -->
+  <header>
+    <h1>Bản đồ & Danh sách địa điểm</h1>
+  </header>
 
-        <div class="dia-diem">
-            <img src="https://via.placeholder.com/300x200">
-            <div>
-                <h3>Trạm y tế xã</h3>
-                <a href="https://maps.app.goo.gl/" target="_blank">
-                    👉 Xem trên Google Maps
-                </a>
-            </div>
-        </div>
+  <!-- Thanh tìm kiếm -->
+  <div class="search-container">
+    <input type="text" id="searchBox" placeholder="Tìm kiếm địa điểm...">
+  </div>
 
+  <!-- Bản đồ -->
+  <div id="map"></div>
+
+  <!-- Danh sách mục -->
+  <section class="items-section">
+    <h2>Danh sách mục</h2>
+    <div class="items-container">
+      <div class="item">
+        <img src="images/item1.jpg" alt="Điểm 1">
+        <h3>Điểm 1</h3>
+        <button onclick="goToLocation(0)">Xem trên bản đồ</button>
+      </div>
+      <div class="item">
+        <img src="images/item2.jpg" alt="Điểm 2">
+        <h3>Điểm 2</h3>
+        <button onclick="goToLocation(1)">Xem trên bản đồ</button>
+      </div>
+      <div class="item">
+        <img src="images/item3.jpg" alt="Điểm 3">
+        <h3>Điểm 3</h3>
+        <button onclick="goToLocation(2)">Xem trên bản đồ</button>
+      </div>
+      <!-- Thêm nhiều item tương tự -->
     </div>
+  </section>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- JS của bạn -->
+  <script src="script.js"></script>
+
 </body>
 </html>
