@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Chi tiết UBND</title>
+
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+</head>
+
+<body>
+
+<div class="app">
+  <div class="sidebar">
+    <h2 id="title">UBND</h2>
+
+
+    <button onclick="getUserLocation()">📍 Vị trí tôi</button>
+    <button onclick="drawRoute()">🚗 Chỉ đường</button>
+<input
+  type="text"
+  id="searchPOI"
+  placeholder="🔍 Tìm quán ăn / cafe..."
+  oninput="searchPOI()"
+/>
+
+    <h3>🍜 Quán ăn</h3>
+    <div id="foods" class="list"></div>
+
+    <h3>☕ Cafe</h3>
+    <div id="cafes" class="list"></div>
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="location.js"></script>
+</body>
+</html>

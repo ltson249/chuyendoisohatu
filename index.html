@@ -3,55 +3,113 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trang web địa điểm</title>
-
-  <!-- Leaflet CSS cho bản đồ -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <!-- CSS của bạn -->
-  <link rel="stylesheet" href="style.css" />
+  <title>Quảng Ninh Smart Map v3 - Plus</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- Tiêu đề -->
-  <header>
-    <h1>Bản đồ & Danh sách địa điểm</h1>
-  </header>
+<div class="app">
+  <div class="sidebar">
+    <!-- KHU VỰC CHÍNH (GIỮ NGUYÊN) -->
+    <div id="main-sidebar">
+      <div class="header">
+        <h2>📍 QUẢNG NINH SMART MAP</h2>
+        <div class="tabs">
+          <button onclick="showTab('search')">🔍 Tìm kiếm</button>
+          <button onclick="showTab('schools')">🏫 Trường học</button>
+          <button onclick="showTab('ubnd')">🏛 UBND</button>
+          <button onclick="showTab('food')">🍜 Ẩm thực & Cafe</button>
+          <button onclick="showTab('create')" class="btn-create">➕ Thêm địa điểm</button>
+        </div>
+      </div>
 
-  <!-- Thanh tìm kiếm -->
-  <div class="search-container">
-    <input type="text" id="searchBox" placeholder="Tìm kiếm địa điểm...">
+      <div class="content">
+        <!-- Tab Tìm kiếm địa danh -->
+        <div id="tab-search" class="tab-content active">
+          <div class="search-group">
+            <input id="searchBox" placeholder="Nhập địa danh cần tìm tại Quảng Ninh...">
+            <button onclick="searchLocation()">Tìm kiếm</button>
+          </div>
+          <div id="proposal-list" class="proposal-list"></div>
+          <div id="search-selected-result" class="result-list"></div>
+        </div>
+
+        <!-- Tab Trường học -->
+        <div id="tab-schools" class="tab-content">
+          <h3>Quét Trường học bán kính 10km</h3>
+          <div class="search-group">
+            <input id="searchSchoolCenter" placeholder="Nhập khu vực...">
+            <button onclick="searchTypeAround('school')">Quét dữ liệu</button>
+          </div>
+          <div id="school-results" class="result-list"></div>
+        </div>
+
+        <!-- Tab UBND -->
+        <div id="tab-ubnd" class="tab-content">
+          <h3>Quét UBND bán kính 10km</h3>
+          <div class="search-group">
+            <input id="searchUBNDCenter" placeholder="Nhập khu vực...">
+            <button onclick="searchTypeAround('ubnd')">Quét dữ liệu</button>
+          </div>
+          <div id="ubnd-results" class="result-list"></div>
+        </div>
+
+        <!-- Tab Ẩm thực -->
+        <div id="tab-food" class="tab-content">
+          <h3>Quét Ẩm thực & Cafe bán kính 10km</h3>
+          <div class="search-group">
+            <input id="searchFoodCenter" placeholder="Nhập khu vực...">
+            <button onclick="searchTypeAround('food')">Quét dữ liệu</button>
+          </div>
+          <div id="food-results" class="result-list"></div>
+        </div>
+
+        <!-- Tab Thêm địa điểm (NÂNG CẤP) -->
+        <div id="tab-create" class="tab-content">
+          <div class="create-form">
+            <h3>Tạo địa điểm cá nhân</h3>
+            <p style="font-size: 12px; color: #666;">ℹ️ Click vào bản đồ để lấy tọa độ ghim</p>
+            <input type="text" id="new-name" placeholder="Tên địa điểm">
+            <div class="coords">
+              <input type="text" id="new-lat" placeholder="Vĩ độ" readonly>
+              <input type="text" id="new-lon" placeholder="Kinh độ" readonly>
+            </div>
+            <textarea id="new-desc" placeholder="Nhập đánh giá / mô tả của bạn..."></textarea>
+            <label>Chọn hình ảnh:</label>
+            <input type="file" id="new-img" accept="image/*">
+            <button onclick="saveMyPlace()" style="background:#28a745; margin-top:10px; width:100%">Lưu địa điểm</button>
+          </div>
+          <hr>
+          <h3>Địa điểm bạn đã ghim:</h3>
+          <div id="my-places-list" class="result-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GIAO DIỆN TRANG CHI TIẾT (MỚI THÊM) -->
+    <div id="detail-view" style="display:none;">
+        <button onclick="closeDetail()" class="btn-back">⬅ Quay lại danh sách</button>
+        <div id="detail-content" class="content">
+            <!-- Dữ liệu chi tiết sẽ đổ vào đây -->
+        </div>
+        <div class="comment-section">
+            <h4>Bình luận & Đánh giá</h4>
+            <div id="comment-list"></div>
+            <div class="comment-input">
+                <input type="text" id="cmt-user" placeholder="Tên bạn">
+                <textarea id="cmt-text" placeholder="Viết bình luận..."></textarea>
+                <button onclick="submitComment()">Gửi</button>
+            </div>
+        </div>
+    </div>
+
   </div>
 
-  <!-- Bản đồ -->
   <div id="map"></div>
+</div>
 
-  <!-- Danh sách mục -->
-  <section class="items-section">
-    <h2>Danh sách mục</h2>
-    <div class="items-container">
-      <div class="item">
-        <img src="images/item1.jpg" alt="Điểm 1">
-        <h3>Điểm 1</h3>
-        <button onclick="goToLocation(0)">Xem trên bản đồ</button>
-      </div>
-      <div class="item">
-        <img src="images/item2.jpg" alt="Điểm 2">
-        <h3>Điểm 2</h3>
-        <button onclick="goToLocation(1)">Xem trên bản đồ</button>
-      </div>
-      <div class="item">
-        <img src="images/item3.jpg" alt="Điểm 3">
-        <h3>Điểm 3</h3>
-        <button onclick="goToLocation(2)">Xem trên bản đồ</button>
-      </div>
-      <!-- Thêm nhiều item tương tự -->
-    </div>
-  </section>
-
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- JS của bạn -->
-  <script src="script.js"></script>
-
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
