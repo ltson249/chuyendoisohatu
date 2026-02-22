@@ -1,115 +1,194 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quảng Ninh Smart Map v3 - Plus</title>
+  <meta charset="UTF-8" />
+  <title>Đoàn Thanh Niên Phường Hà Tu</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Firebase v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
+
 <body>
+  <div class="app">
+    <!-- SIDEBAR (50%) -->
+    <aside class="sidebar">
+      <header class="topbar">
+        <div class="brand">
+          <img class="brand__logo"
+               src="https://upload.wikimedia.org/wikipedia/commons/a/a1/Logo_Huy_hi%E1%BB%87u_%C4%90o%C3%A0n.svg"
+               alt="Logo Đoàn" />
+          <div class="brand__text">
+            <div class="brand__title">ĐOÀN THANH NIÊN PHƯỜNG HÀ TU</div>
+            <div class="brand__subtitle">Cổng bản đồ số & tiện ích cộng đồng</div>
+          </div>
+        </div>
 
-<div class="app">
-  <div class="sidebar">
-    <!-- KHU VỰC CHÍNH (GIỮ NGUYÊN) -->
-    <div id="main-sidebar">
-      <div class="header">
-        <h2>📍 QUẢNG NINH SMART MAP</h2>
-        <div class="tabs">
-          <button onclick="showTab('search')">🔍 Tìm kiếm</button>
-          <button onclick="showTab('schools')">🏫 Trường học</button>
-          <button onclick="showTab('ubnd')">🏛 UBND</button>
-          <button onclick="showTab('food')">🍜 Ẩm thực & Cafe</button>
-          <button onclick="showTab('create')" class="btn-create">➕ Thêm địa điểm</button>
+        <nav class="tabs" role="tablist">
+          <button class="tabbtn active" data-tab="home" onclick="showTab('home')">🏠 Trang chủ</button>
+          <button class="tabbtn" data-tab="locations" onclick="showTab('locations')">📍 Địa điểm</button>
+          <button class="tabbtn" data-tab="tools" onclick="showTab('tools')">🧩 Tiện ích</button>
+          <button class="tabbtn admin-pill" data-tab="admin" onclick="showTab('admin')">🔐 Admin</button>
+        </nav>
+      </header>
+
+      <main class="panel">
+        <!-- HOME -->
+        <section id="tab-home" class="tab active">
+          <div class="card hero">
+            <div class="hero__title">Bản đồ số Đoàn Thanh Niên Phường Hà Tu</div>
+            <div class="hero__desc">
+              Cập nhật địa điểm sinh hoạt, điểm tình nguyện, công trình thanh niên và tiện ích phục vụ người dân.
+            </div>
+            <div class="hero__row">
+              <input id="searchInput" class="input" placeholder="Tìm địa điểm (VD: Nhà văn hóa Hà Tu, UBND...)" />
+              <button class="btn" onclick="searchPlace()">Tìm</button>
+            </div>
+            <div class="hint">📌 Mẹo: bấm 1 địa điểm trong tab “Địa điểm” để bay tới vị trí và mở chỉ đường.</div>
+          </div>
+        </section>
+
+        <!-- LOCATIONS -->
+        <section id="tab-locations" class="tab">
+          <div class="row-head">
+            <h3 class="h3">📍 Danh sách địa điểm</h3>
+            <div class="small muted" id="locationsCount">0 mục</div>
+          </div>
+
+          <div class="filters">
+            <input id="locationFilter" class="input" placeholder="Lọc theo tên / mô tả..." oninput="renderLocations()" />
+          </div>
+
+          <div id="location-list" class="list"></div>
+        </section>
+
+        <!-- TOOLS -->
+        <section id="tab-tools" class="tab">
+          <h3 class="h3">🧩 Tiện ích cố định</h3>
+          <div class="list">
+            <div class="item-card" onclick="callNumber('113')">🚓 Công an – 113</div>
+            <div class="item-card" onclick="callNumber('114')">🔥 PCCC – 114</div>
+            <div class="item-card" onclick="callNumber('115')">🚑 Y tế – 115</div>
+            <div class="item-card" onclick="openLink('https://dichvucong.quangninh.gov.vn')">📄 Cổng DVC Quảng Ninh</div>
+            <div class="item-card" onclick="openWeather()">🌦 Thời tiết Hà Tu</div>
+            <div class="item-card" onclick="openFeedback()">🆘 Phản ánh hiện trường</div>
+          </div>
+
+          <hr class="sep" />
+
+          <div class="row-head">
+            <h3 class="h3">🧩 Tiện ích do Admin tạo</h3>
+            <div class="small muted">Admin có thể thêm/sửa/xóa</div>
+          </div>
+
+          <div id="utilities-dynamic" class="list"></div>
+        </section>
+
+        <!-- ADMIN -->
+        <section id="tab-admin" class="tab">
+          <div class="card">
+            <div class="row-head">
+              <h3 class="h3">🔐 Khu vực quản trị</h3>
+              <button id="btnLogout" class="btn btn-ghost" style="display:none" onclick="logoutAdmin()">Đăng xuất</button>
+            </div>
+
+            <div id="adminAuth">
+              <div class="muted small">Nhập mật khẩu để bật quyền quản trị (thêm/sửa/xóa).</div>
+              <div class="hero__row">
+                <input type="password" id="adminPass" class="input" placeholder="Mật khẩu admin" />
+                <button class="btn" onclick="loginAdmin()">Đăng nhập</button>
+              </div>
+              <div class="hint warning">
+                ⚠️ Mật khẩu hardcode chỉ phù hợp demo. Nếu muốn “chuẩn & an toàn”, dùng Firebase Auth.
+              </div>
+            </div>
+
+            <div id="adminPanel" style="display:none">
+              <div class="admin-badge">✅ Quyền quản trị đã bật</div>
+
+              <div class="grid2">
+                <!-- LOCATION FORM -->
+                <div class="subcard">
+                  <div class="row-head">
+                    <h4 class="h4">📍 Quản lý địa điểm</h4>
+                    <span class="small muted" id="locationMode">Chế độ: Thêm mới</span>
+                  </div>
+
+                  <input id="name" class="input" placeholder="Tên địa điểm" />
+                  <textarea id="desc" class="input" rows="3" placeholder="Mô tả ngắn"></textarea>
+
+                  <div class="grid2">
+                    <input id="lat" class="input" placeholder="Vĩ độ" readonly />
+                    <input id="lng" class="input" placeholder="Kinh độ" readonly />
+                  </div>
+
+                  <textarea id="images" class="input" rows="3"
+                    placeholder="Ảnh (URL) — mỗi dòng 1 link hoặc cách nhau bằng dấu phẩy"></textarea>
+
+                  <div class="hint">📌 Cách lấy tọa độ: bấm trực tiếp lên bản đồ (bên phải).</div>
+
+                  <div class="actions">
+                    <button class="btn" onclick="saveLocation()">Lưu địa điểm</button>
+                    <button class="btn btn-ghost" onclick="resetLocationForm()">Làm mới</button>
+                  </div>
+                </div>
+
+                <!-- UTILITY FORM -->
+                <div class="subcard">
+                  <div class="row-head">
+                    <h4 class="h4">🧩 Quản lý tiện ích (Admin tạo)</h4>
+                    <span class="small muted" id="utilityMode">Chế độ: Thêm mới</span>
+                  </div>
+
+                  <input id="utilTitle" class="input" placeholder="Tên tiện ích" />
+                  <select id="utilType" class="input">
+                    <option value="call">📞 Gọi điện</option>
+                    <option value="map">📍 Địa điểm (lat,lng + chỉ đường)</option>
+                    <option value="link">🔗 Liên kết</option>
+                  </select>
+                  <input id="utilValue" class="input" placeholder="SĐT / lat,lng / link" />
+
+                  <div class="actions">
+                    <button class="btn" onclick="saveUtility()">Lưu tiện ích</button>
+                    <button class="btn btn-ghost" onclick="resetUtilityForm()">Làm mới</button>
+                  </div>
+
+                  <div class="hint">Ví dụ map: <code>20.943,107.112</code></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="small">
+          © Đoàn Thanh Niên phường Hà Tu • Bản đồ số & tiện ích cộng đồng
+        </div>
+      </footer>
+    </aside>
+
+    <!-- MAP (50%) -->
+    <section class="mapwrap">
+      <div class="maphead">
+        <div class="maphead__left">
+          <div class="maptitle">🗺 Bản đồ</div>
+          <div class="small muted">Bấm lên marker để xem chi tiết & chỉ đường</div>
+        </div>
+        <div class="maphead__right">
+          <button class="btn btn-ghost" onclick="fitAllMarkers()">Xem tất cả</button>
         </div>
       </div>
-
-      <div class="content">
-        <!-- Tab Tìm kiếm địa danh -->
-        <div id="tab-search" class="tab-content active">
-          <div class="search-group">
-            <input id="searchBox" placeholder="Nhập địa danh cần tìm tại Quảng Ninh...">
-            <button onclick="searchLocation()">Tìm kiếm</button>
-          </div>
-          <div id="proposal-list" class="proposal-list"></div>
-          <div id="search-selected-result" class="result-list"></div>
-        </div>
-
-        <!-- Tab Trường học -->
-        <div id="tab-schools" class="tab-content">
-          <h3>Quét Trường học bán kính 10km</h3>
-          <div class="search-group">
-            <input id="searchSchoolCenter" placeholder="Nhập khu vực...">
-            <button onclick="searchTypeAround('school')">Quét dữ liệu</button>
-          </div>
-          <div id="school-results" class="result-list"></div>
-        </div>
-
-        <!-- Tab UBND -->
-        <div id="tab-ubnd" class="tab-content">
-          <h3>Quét UBND bán kính 10km</h3>
-          <div class="search-group">
-            <input id="searchUBNDCenter" placeholder="Nhập khu vực...">
-            <button onclick="searchTypeAround('ubnd')">Quét dữ liệu</button>
-          </div>
-          <div id="ubnd-results" class="result-list"></div>
-        </div>
-
-        <!-- Tab Ẩm thực -->
-        <div id="tab-food" class="tab-content">
-          <h3>Quét Ẩm thực & Cafe bán kính 10km</h3>
-          <div class="search-group">
-            <input id="searchFoodCenter" placeholder="Nhập khu vực...">
-            <button onclick="searchTypeAround('food')">Quét dữ liệu</button>
-          </div>
-          <div id="food-results" class="result-list"></div>
-        </div>
-
-        <!-- Tab Thêm địa điểm (NÂNG CẤP) -->
-        <div id="tab-create" class="tab-content">
-          <div class="create-form">
-            <h3>Tạo địa điểm cá nhân</h3>
-            <p style="font-size: 12px; color: #666;">ℹ️ Click vào bản đồ để lấy tọa độ ghim</p>
-            <input type="text" id="new-name" placeholder="Tên địa điểm">
-            <div class="coords">
-              <input type="text" id="new-lat" placeholder="Vĩ độ" readonly>
-              <input type="text" id="new-lon" placeholder="Kinh độ" readonly>
-            </div>
-            <textarea id="new-desc" placeholder="Nhập đánh giá / mô tả của bạn..."></textarea>
-            <label>Chọn hình ảnh:</label>
-            <input type="file" id="new-img" accept="image/*">
-            <button onclick="saveMyPlace()" style="background:#28a745; margin-top:10px; width:100%">Lưu địa điểm</button>
-          </div>
-          <hr>
-          <h3>Địa điểm bạn đã ghim:</h3>
-          <div id="my-places-list" class="result-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- GIAO DIỆN TRANG CHI TIẾT (MỚI THÊM) -->
-    <div id="detail-view" style="display:none;">
-        <button onclick="closeDetail()" class="btn-back">⬅ Quay lại danh sách</button>
-        <div id="detail-content" class="content">
-            <!-- Dữ liệu chi tiết sẽ đổ vào đây -->
-        </div>
-        <div class="comment-section">
-            <h4>Bình luận & Đánh giá</h4>
-            <div id="comment-list"></div>
-            <div class="comment-input">
-                <input type="text" id="cmt-user" placeholder="Tên bạn">
-                <textarea id="cmt-text" placeholder="Viết bình luận..."></textarea>
-                <button onclick="submitComment()">Gửi</button>
-            </div>
-        </div>
-    </div>
-
+      <div id="map"></div>
+    </section>
   </div>
 
-  <div id="map"></div>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="script.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
