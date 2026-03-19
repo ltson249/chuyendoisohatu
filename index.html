@@ -11,6 +11,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 </head>
 
 <body>
@@ -143,12 +144,16 @@
             </div>
 
             <div id="adminAuth">
-              <div class="muted small">Nhập mật khẩu để bật quyền quản trị (thêm/sửa/xóa).</div>
-              <div class="hero__row">
+              <div class="muted small">Đăng nhập admin bằng Firebase Authentication.</div>
+              <div class="hero__row admin-auth-row">
+                <input type="email" id="adminEmail" class="input" placeholder="Email admin" />
                 <input type="password" id="adminPass" class="input" placeholder="Mật khẩu admin" />
-                <button class="btn" onclick="loginAdmin()">Đăng nhập</button>
               </div>
-              <div class="hint warning"></div>
+              <div class="actions">
+                <button class="btn" onclick="loginAdmin()">Đăng nhập</button>
+                <button class="btn btn-ghost" onclick="sendAdminPasswordReset()">Quên mật khẩu</button>
+              </div>
+              <div id="adminAuthStatus" class="hint warning"></div>
             </div>
 
             <div id="adminPanel" style="display:none">
@@ -164,9 +169,7 @@
                 </div>
 
                 <div class="actions">
-                  <button class="btn btn-ghost" onclick="saveCloudinarySettings()">
-                    Lưu cấu hình upload
-                  </button>
+                  <button class="btn btn-ghost" onclick="saveCloudinarySettings()">Lưu cấu hình upload</button>
                 </div>
               </div>
 
@@ -246,7 +249,7 @@
                 </div>
               </div>
 
-              <div class="admin-badge">✅ Quyền quản trị đã bật</div>
+              <div class="admin-badge">✅ Đã xác thực admin qua Firebase</div>
 
               <div class="grid2">
                 <div class="subcard">
@@ -264,18 +267,20 @@
                   </div>
 
                   <label class="small muted">Ảnh địa điểm (chọn từ máy)</label>
-                  <input
-                    id="locationFiles"
-                    class="input"
-                    type="file"
-                    accept="image/*"
-                    multiple
-                  />
+                  <input id="locationFiles" class="input" type="file" accept="image/*" multiple />
+
+                  <label class="small muted" style="margin-top:10px; display:block;">Logo ghim trên bản đồ</label>
+                  <input id="locationIconFile" class="input" type="file" accept="image/*" />
 
                   <div class="actions">
-                    <button type="button" class="btn btn-ghost" onclick="uploadLocationImages()">
-                      ⬆️ Tải ảnh lên
-                    </button>
+                    <button type="button" class="btn btn-ghost" onclick="uploadLocationIcon()">📍 Tải logo ghim</button>
+                  </div>
+
+                  <div id="locationIconStatus" class="small muted"></div>
+                  <input id="locationIconUrl" class="input" type="hidden" />
+
+                  <div class="actions">
+                    <button type="button" class="btn btn-ghost" onclick="uploadLocationImages()">⬆️ Tải ảnh lên</button>
                   </div>
 
                   <div id="locationUploadStatus" class="small muted"></div>
@@ -334,7 +339,9 @@
           <div class="small muted">Bấm lên marker để xem chi tiết, chỉ đường Google Maps hoặc chỉ đường trên web</div>
         </div>
         <div class="maphead__right">
-          <button class="btn btn-ghost" onclick="fitAllMarkers()">Xem tất cả</button>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-ghost" onclick="fitAllMarkers()">Xem tất cả</button>
+          </div>
         </div>
       </div>
       <div id="map"></div>

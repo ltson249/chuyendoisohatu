@@ -1,10 +1,23 @@
 /* =========================
    Firebase
 ========================= */
-firebase.initializeApp({
-  databaseURL: "https://hatumap-default-rtdb.firebaseio.com/"
-});
+const firebaseConfig = {
+  apiKey: "AIzaSyDf0zIgG5445L5k9YhSIN7KSo12uslI-6Y",
+  authDomain: "hatumap.firebaseapp.com",
+  databaseURL: "https://hatumap-default-rtdb.firebaseio.com",
+  projectId: "hatumap",
+  storageBucket: "hatumap.firebasestorage.app",
+  messagingSenderId: "867387956570",
+  appId: "1:867387956570:web:e2e91a942735da76db6763",
+  measurementId: "G-2DLNK3SM7B"
+};
+
+
+firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const auth = firebase.auth();
+
+const ADMIN_UID = "NZYYYPTukCh6OBBI1yZm5fqvMbB2";
 
 /* =========================
    State
@@ -12,57 +25,132 @@ const db = firebase.database();
 let isAdmin = false;
 let editingLocationKey = null;
 let editingUtilityKey = null;
+let editingNewsKey = null;
+let editingHomeCardKey = null;
 
 let markersByKey = {};
 let allLocationData = {};
 let allUtilityData = {};
 let tempLocationImages = [];
+let markerClusterPolygon = null;
 
 let routeControl = null;
 let currentUserLatLng = null;
-
-/* =========================
-   Map (Leaflet)
-========================= */
-const map = L.map("map").setView([20.943, 107.112], 15);
-
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "© OpenStreetMap"
-}).addTo(map);
-
+let searchMarker = null;
 let tempMarker = null;
 
-map.on("click", (e) => {
-  if (!isAdmin) return;
+let siteContentData = {
+  logoUrl: "",
+  heroMediaType: "image",
+  heroMediaUrl: "",
+  homeCards: {}
+};
 
-  const latEl = document.getElementById("lat");
-  const lngEl = document.getElementById("lng");
-
-  if (!latEl || !lngEl) return;
-
-  latEl.value = e.latlng.lat.toFixed(6);
-  lngEl.value = e.latlng.lng.toFixed(6);
-
-  if (tempMarker) map.removeLayer(tempMarker);
-  tempMarker = L.marker(e.latlng)
-    .addTo(map)
-    .bindPopup("📍 Đã chọn vị trí")
-    .openPopup();
-});
+let newsData = {};
 
 /* =========================
    Helpers
 ========================= */
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function parseImages(raw) {
+  if (!raw) return [];
+  return raw
+    .split(/[\n,]+/g)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function normalizeUrl(url) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
+
 function setActiveTabButton(tab) {
   document.querySelectorAll(".tabbtn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tab);
   });
 }
 
+function setAdminAuthStatus(text = "", isError = false) {
+  const el = document.getElementById("adminAuthStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? "#b42318" : "#64748B";
+}
+
+function openLink(url) {
+  const safeUrl = normalizeUrl(url);
+  if (!safeUrl) return;
+  window.open(safeUrl, "_blank", "noopener,noreferrer");
+}
+
+function callNumber(num) {
+  const phone = String(num || "").trim();
+  if (!phone) return;
+  window.location.href = `tel:${phone}`;
+}
+
+function openWeather() {
+  window.open(
+    "https://www.google.com/search?q=th%E1%BB%9Di+ti%E1%BA%BFt+H%C3%A0+Tu+Qu%E1%BA%A3ng+Ninh",
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+function googleDirectionsLink(lat, lng) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+
+function getImagesField() {
+  return document.getElementById("images");
+}
+
+function syncImagesField() {
+  const imagesEl = getImagesField();
+  if (imagesEl) imagesEl.value = tempLocationImages.join("\n");
+}
+
+function setUploadStatus(text, isError = false) {
+  const box = document.getElementById("locationUploadStatus");
+  if (!box) return;
+  box.textContent = text || "";
+  box.style.color = isError ? "#b91c1c" : "";
+}
+
+function setLocationIconStatus(text, isError = false) {
+  const box = document.getElementById("locationIconStatus");
+  if (!box) return;
+  box.textContent = text || "";
+  box.style.color = isError ? "#b91c1c" : "";
+}
+
+function isAdminUser(user) {
+  return !!(user && user.uid === ADMIN_UID);
+}
+
+function requireAdmin() {
+  if (!isAdmin) {
+    alert("Bạn chưa đăng nhập admin hoặc không có quyền.");
+    throw new Error("Admin permission required");
+  }
+}
+
 function showTab(tab) {
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   const activeTab = document.getElementById("tab-" + tab);
   if (activeTab) activeTab.classList.add("active");
+
   setActiveTabButton(tab);
 
   const app = document.querySelector(".app");
@@ -80,59 +168,57 @@ function showTab(tab) {
   }, 250);
 }
 
-function openLink(url) {
-  window.open(url, "_blank", "noopener,noreferrer");
-}
+/* =========================
+   Map
+========================= */
+const map = L.map("map", {
+  center: [20.943, 107.112],
+  zoom: 15,
+  minZoom: 12,
+  maxZoom: 18
+}).setView([20.943, 107.112], 15);
 
-function callNumber(num) {
-  window.location.href = `tel:${num}`;
-}
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap"
+}).addTo(map);
 
-function openWeather() {
-  window.open("https://www.google.com/search?q=th%E1%BB%9Di+ti%E1%BA%BFt+H%C3%A0+Tu+Qu%E1%BA%A3ng+Ninh", "_blank", "noopener,noreferrer");
-}
+map.on("click", (e) => {
+  if (!isAdmin) return;
 
-function openFeedback() {
-  window.open("https://docs.google.com/forms", "_blank", "noopener,noreferrer");
-}
+  const latEl = document.getElementById("lat");
+  const lngEl = document.getElementById("lng");
+  if (!latEl || !lngEl) return;
 
-function parseImages(raw) {
-  if (!raw) return [];
-  return raw
-    .split(/[\n,]+/g)
-    .map(s => s.trim())
-    .filter(Boolean);
-}
+  latEl.value = e.latlng.lat.toFixed(6);
+  lngEl.value = e.latlng.lng.toFixed(6);
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+  if (tempMarker) map.removeLayer(tempMarker);
 
-function googleDirectionsLink(lat, lng) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-}
+  tempMarker = L.marker(e.latlng)
+    .addTo(map)
+    .bindPopup("📍 Đã chọn vị trí")
+    .openPopup();
+});
 
 function fitAllMarkers() {
-  const keys = Object.keys(allLocationData);
-  if (!keys.length) return;
-
-  const latlngs = keys
-    .map(k => [Number(allLocationData[k].lat), Number(allLocationData[k].lng)])
-    .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+  const latlngs = Object.values(allLocationData)
+    .map(d => L.latLng(Number(d.lat), Number(d.lng)))
+    .filter(ll => Number.isFinite(ll.lat) && Number.isFinite(ll.lng));
 
   if (!latlngs.length) return;
 
-  const bounds = L.latLngBounds(latlngs);
-  map.fitBounds(bounds.pad(0.2));
+  let bounds = L.latLngBounds(latlngs);
+  const north = bounds.getNorth() + 0.01;
+  const south = bounds.getSouth() - 0.01;
+  const east = bounds.getEast() + 0.01;
+  const west = bounds.getWest() - 0.01;
+
+  bounds = L.latLngBounds([south, west], [north, east]);
+  map.fitBounds(bounds);
 }
 
 /* =========================
-   Routing on web map
+   Routing
 ========================= */
 function getUserLocation() {
   return new Promise((resolve, reject) => {
@@ -142,9 +228,7 @@ function getUserLocation() {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve([position.coords.latitude, position.coords.longitude]);
-      },
+      (position) => resolve([position.coords.latitude, position.coords.longitude]),
       (error) => reject(error),
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -181,10 +265,8 @@ async function showRouteOnMap(destinationLat, destinationLng) {
       lineOptions: {
         styles: [{ color: "#2E8AED", opacity: 0.9, weight: 6 }]
       },
-      createMarker: function(i, wp) {
-        if (i === 0) {
-          return L.marker(wp.latLng).bindPopup("📍 Vị trí của bạn");
-        }
+      createMarker: function (i, wp) {
+        if (i === 0) return L.marker(wp.latLng).bindPopup("📍 Vị trí của bạn");
         return L.marker(wp.latLng).bindPopup("🎯 Điểm đến");
       }
     }).addTo(map);
@@ -202,27 +284,25 @@ function clearRouteOnMap() {
 }
 
 /* =========================
-   Cloudinary upload + preview
+   Cloudinary
 ========================= */
 const CLOUDINARY_KEY = "doan_hatu_cloudinary_v1";
 
 function getCloudinarySettings() {
   try {
     return JSON.parse(localStorage.getItem(CLOUDINARY_KEY) || "{}");
-  } catch (e) {
+  } catch {
     return {};
   }
 }
 
 function saveCloudinarySettings() {
+  requireAdmin();
+
   const cloudName = (document.getElementById("cloudName")?.value || "").trim();
   const uploadPreset = (document.getElementById("uploadPreset")?.value || "").trim();
 
-  localStorage.setItem(CLOUDINARY_KEY, JSON.stringify({
-    cloudName,
-    uploadPreset
-  }));
-
+  localStorage.setItem(CLOUDINARY_KEY, JSON.stringify({ cloudName, uploadPreset }));
   alert("Đã lưu cấu hình upload ảnh.");
 }
 
@@ -235,20 +315,127 @@ function hydrateCloudinarySettings() {
   if (uploadPresetEl) uploadPresetEl.value = cfg.uploadPreset || "";
 }
 
-function getImagesField() {
-  return document.getElementById("images");
+async function uploadSingleFileToCloudinary(file, cloudName, uploadPreset) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", uploadPreset);
+  form.append("folder", "doan-thanh-nien/locations");
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/upload`,
+    { method: "POST", body: form }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Upload thất bại");
+  }
+
+  const data = await response.json();
+  if (!data.secure_url) throw new Error("Cloudinary không trả về secure_url");
+  return data.secure_url;
 }
 
-function syncImagesField() {
-  const imagesEl = getImagesField();
-  if (imagesEl) imagesEl.value = tempLocationImages.join("\n");
+async function uploadFileToCloudinary(file, resourceType = "image") {
+  const { cloudName, uploadPreset } = getCloudinarySettings();
+
+  if (!cloudName || !uploadPreset) throw new Error("Thiếu cấu hình Cloudinary");
+
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", uploadPreset);
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${resourceType}/upload`,
+    { method: "POST", body: form }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Upload thất bại");
+  }
+
+  const data = await response.json();
+  if (!data.secure_url) throw new Error("Không lấy được secure_url");
+  return data.secure_url;
 }
 
-function setUploadStatus(text, isError = false) {
-  const box = document.getElementById("locationUploadStatus");
-  if (!box) return;
-  box.textContent = text || "";
-  box.style.color = isError ? "#b91c1c" : "";
+async function uploadLocationImages() {
+  requireAdmin();
+
+  const input = document.getElementById("locationFiles");
+  const files = Array.from(input?.files || []);
+  if (!files.length) return alert("Vui lòng chọn ít nhất 1 ảnh.");
+
+  const { cloudName, uploadPreset } = getCloudinarySettings();
+  if (!cloudName || !uploadPreset) return alert("Bạn chưa cấu hình Cloudinary.");
+
+  try {
+    setUploadStatus("Đang tải ảnh lên...");
+    const urls = [];
+
+    for (const file of files) {
+      const url = await uploadSingleFileToCloudinary(file, cloudName, uploadPreset);
+      urls.push(url);
+    }
+
+    tempLocationImages = tempLocationImages.concat(urls);
+    if (input) input.value = "";
+
+    renderLocationPreview();
+    setUploadStatus(`Đã tải lên ${urls.length} ảnh.`);
+  } catch (error) {
+    console.error(error);
+    setUploadStatus("Upload thất bại. Kiểm tra lại cloud name / upload preset.", true);
+    alert("Upload ảnh thất bại.");
+  }
+}
+
+async function uploadLocationIcon() {
+  requireAdmin();
+
+  const input = document.getElementById("locationIconFile");
+  const file = input?.files?.[0];
+  if (!file) return alert("Vui lòng chọn logo ghim.");
+
+  try {
+    setLocationIconStatus("Đang tải logo ghim...");
+    const { cloudName, uploadPreset } = getCloudinarySettings();
+    if (!cloudName || !uploadPreset) return alert("Bạn chưa cấu hình Cloudinary.");
+
+    const url = await uploadSingleFileToCloudinary(file, cloudName, uploadPreset);
+    document.getElementById("locationIconUrl").value = url;
+
+    setLocationIconStatus("Đã tải logo ghim lên.");
+    input.value = "";
+  } catch (err) {
+    console.error(err);
+    setLocationIconStatus("Upload logo ghim thất bại.", true);
+    alert("Upload logo ghim thất bại.");
+  }
+}
+
+/* =========================
+   Marker UI
+========================= */
+function buildCustomLocationIcon(iconUrl) {
+  const hasImage = !!iconUrl;
+
+  return L.divIcon({
+    className: "custom-location-marker",
+    html: `
+      <div class="custom-marker-wrap">
+        <div class="custom-marker-pin">
+          <div class="custom-marker-badge ${hasImage ? "" : "custom-marker-badge--fallback"}">
+            ${hasImage ? `<img src="${escapeHtml(iconUrl)}" alt="Logo">` : "📍"}
+          </div>
+        </div>
+      </div>
+    `,
+    iconSize: [54, 68],
+    iconAnchor: [27, 68],
+    popupAnchor: [0, -58]
+  });
 }
 
 function renderLocationPreview() {
@@ -273,65 +460,6 @@ function renderLocationPreview() {
 function removeTempImage(index) {
   tempLocationImages.splice(index, 1);
   renderLocationPreview();
-}
-
-async function uploadSingleFileToCloudinary(file, cloudName, uploadPreset) {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("upload_preset", uploadPreset);
-  form.append("folder", "doan-thanh-nien/locations");
-
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/upload`,
-    {
-      method: "POST",
-      body: form
-    }
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Upload thất bại");
-  }
-
-  const data = await response.json();
-  if (!data.secure_url) {
-    throw new Error("Cloudinary không trả về secure_url");
-  }
-  return data.secure_url;
-}
-
-async function uploadLocationImages() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
-
-  const input = document.getElementById("locationFiles");
-  const files = Array.from(input?.files || []);
-  if (!files.length) return alert("Vui lòng chọn ít nhất 1 ảnh.");
-
-  const { cloudName, uploadPreset } = getCloudinarySettings();
-  if (!cloudName || !uploadPreset) {
-    return alert("Bạn chưa cấu hình Cloudinary. Hãy nhập cloud name và upload preset trong mục Admin.");
-  }
-
-  try {
-    setUploadStatus("Đang tải ảnh lên...");
-    const urls = [];
-
-    for (const file of files) {
-      const url = await uploadSingleFileToCloudinary(file, cloudName, uploadPreset);
-      urls.push(url);
-    }
-
-    tempLocationImages = tempLocationImages.concat(urls);
-
-    if (input) input.value = "";
-    renderLocationPreview();
-    setUploadStatus(`Đã tải lên ${urls.length} ảnh.`);
-  } catch (error) {
-    console.error(error);
-    setUploadStatus("Upload thất bại. Kiểm tra lại cloud name / upload preset.", true);
-    alert("Upload ảnh thất bại.");
-  }
 }
 
 /* =========================
@@ -399,8 +527,7 @@ function renderLocations() {
 
       div.innerHTML = `
         <div style="display:flex; gap:10px; align-items:flex-start;">
-          ${firstImg ? `<img src="${escapeHtml(firstImg)}" alt="Ảnh"
-            style="width:72px;height:54px;object-fit:cover;border-radius:10px;border:1px solid rgba(0,0,0,.08);">` : ""}
+          ${firstImg ? `<img src="${escapeHtml(firstImg)}" alt="Ảnh" style="width:72px;height:54px;object-fit:cover;border-radius:10px;border:1px solid rgba(0,0,0,.08);">` : ""}
           <div style="flex:1;">
             <div style="font-weight:900;color:#1831AE;">${escapeHtml(d.name)}</div>
             <div class="small muted" style="margin-top:2px;">${escapeHtml(d.desc || "")}</div>
@@ -433,6 +560,69 @@ function renderLocations() {
     });
 }
 
+function cross(o, a, b) {
+  return (a.lng - o.lng) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lng - o.lng);
+}
+
+function convexHull(points) {
+  if (points.length < 3) return points;
+
+  const pts = [...points].sort((p1, p2) => {
+    if (p1.lng === p2.lng) return p1.lat - p2.lat;
+    return p1.lng - p2.lng;
+  });
+
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+function refreshMarkerClusterPolygon() {
+  if (markerClusterPolygon) {
+    map.removeLayer(markerClusterPolygon);
+    markerClusterPolygon = null;
+  }
+
+  const points = Object.values(allLocationData)
+    .map(d => ({ lat: Number(d.lat), lng: Number(d.lng) }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
+  if (points.length < 3) return;
+
+  const hull = convexHull(points);
+  const hullLatLngs = hull.map(p => [p.lat, p.lng]);
+
+  markerClusterPolygon = L.polygon(hullLatLngs, {
+    color: "#d32f2f",
+    weight: 3,
+    fillColor: "#ef9a9a",
+    fillOpacity: 0.12
+  }).addTo(map);
+
+  markerClusterPolygon.bindTooltip("Khu vực các điểm đã ghim", {
+    permanent: false,
+    direction: "center",
+    className: "marker-polygon-label"
+  });
+}
+
 function refreshMarkers() {
   clearAllMarkers();
 
@@ -443,10 +633,14 @@ function refreshMarkers() {
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
-    const m = L.marker([lat, lng]).addTo(map);
-    m.bindPopup(buildLocationPopupHtml(d));
-    markersByKey[key] = m;
+    const markerIcon = buildCustomLocationIcon(d.iconUrl || "");
+    const marker = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
+
+    marker.bindPopup(buildLocationPopupHtml(d));
+    markersByKey[key] = marker;
   });
+
+  refreshMarkerClusterPolygon();
 }
 
 db.ref("locations").on("value", (snap) => {
@@ -460,22 +654,17 @@ db.ref("locations").on("value", (snap) => {
   renderLocations();
 });
 
-function saveLocation() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+async function saveLocation() {
+  requireAdmin();
 
-  const nameEl = document.getElementById("name");
-  const descEl = document.getElementById("desc");
-  const latEl = document.getElementById("lat");
-  const lngEl = document.getElementById("lng");
+  const name = (document.getElementById("name")?.value || "").trim();
+  const desc = (document.getElementById("desc")?.value || "").trim();
+  const lat = (document.getElementById("lat")?.value || "").trim();
+  const lng = (document.getElementById("lng")?.value || "").trim();
 
   syncImagesField();
-  const imagesEl = document.getElementById("images");
-
-  const name = (nameEl?.value || "").trim();
-  const desc = (descEl?.value || "").trim();
-  const lat = (latEl?.value || "").trim();
-  const lng = (lngEl?.value || "").trim();
-  const images = parseImages(imagesEl?.value || "");
+  const images = parseImages(document.getElementById("images")?.value || "");
+  const locationIconUrl = (document.getElementById("locationIconUrl")?.value || "").trim();
 
   if (!name) return alert("Vui lòng nhập tên địa điểm.");
   if (!lat || !lng) return alert("Vui lòng bấm lên bản đồ để lấy tọa độ.");
@@ -485,33 +674,37 @@ function saveLocation() {
     desc,
     lat: Number(lat),
     lng: Number(lng),
-    images
+    images,
+    iconUrl: locationIconUrl
   };
 
-  const modeLabel = document.getElementById("locationMode");
+  try {
+    if (editingLocationKey) {
+      await db.ref("locations/" + editingLocationKey).set(payload);
+      editingLocationKey = null;
+      const modeLabel = document.getElementById("locationMode");
+      if (modeLabel) modeLabel.textContent = "Chế độ: Thêm mới";
+      alert("Đã cập nhật địa điểm.");
+    } else {
+      await db.ref("locations").push(payload);
+      alert("Đã thêm địa điểm.");
+    }
 
-  if (editingLocationKey) {
-    db.ref("locations/" + editingLocationKey).set(payload);
-    if (modeLabel) modeLabel.textContent = "Chế độ: Thêm mới";
-    editingLocationKey = null;
-    alert("Đã cập nhật địa điểm.");
-  } else {
-    db.ref("locations").push(payload);
-    alert("Đã thêm địa điểm.");
+    resetLocationForm();
+  } catch (err) {
+    console.error(err);
+    alert("Lưu địa điểm thất bại.");
   }
-
-  resetLocationForm();
 }
 
 function editLocation(key) {
-  if (!isAdmin) return;
+  requireAdmin();
 
   const d = allLocationData[key];
   if (!d) return;
 
   editingLocationKey = key;
   document.getElementById("locationMode").textContent = "Chế độ: Sửa";
-
   document.getElementById("name").value = d.name || "";
   document.getElementById("desc").value = d.desc || "";
   document.getElementById("lat").value = Number(d.lat).toFixed(6);
@@ -521,7 +714,9 @@ function editLocation(key) {
   syncImagesField();
   renderLocationPreview();
 
-  showTab("locations");
+  document.getElementById("locationIconUrl").value = d.iconUrl || "";
+  setLocationIconStatus(d.iconUrl ? "Đã có logo ghim cho địa điểm này." : "");
+
   map.flyTo([Number(d.lat), Number(d.lng)], 16);
   const m = markersByKey[key];
   if (m) m.openPopup();
@@ -529,16 +724,20 @@ function editLocation(key) {
   showTab("admin");
 }
 
-function deleteLocation(key) {
-  if (!isAdmin) return;
+async function deleteLocation(key) {
+  requireAdmin();
 
   const d = allLocationData[key];
   if (!d) return;
-
   if (!confirm(`Xóa địa điểm "${d.name}"?`)) return;
-  db.ref("locations/" + key).remove();
 
-  if (editingLocationKey === key) resetLocationForm();
+  try {
+    await db.ref("locations/" + key).remove();
+    if (editingLocationKey === key) resetLocationForm();
+  } catch (err) {
+    console.error(err);
+    alert("Xóa địa điểm thất bại.");
+  }
 }
 
 function resetLocationForm() {
@@ -547,19 +746,18 @@ function resetLocationForm() {
   const locationMode = document.getElementById("locationMode");
   if (locationMode) locationMode.textContent = "Chế độ: Thêm mới";
 
-  document.getElementById("name").value = "";
-  document.getElementById("desc").value = "";
-  document.getElementById("lat").value = "";
-  document.getElementById("lng").value = "";
+  const ids = ["name", "desc", "lat", "lng", "locationFiles", "locationIconFile", "locationIconUrl"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
 
   tempLocationImages = [];
   syncImagesField();
   renderLocationPreview();
 
-  const fileInput = document.getElementById("locationFiles");
-  if (fileInput) fileInput.value = "";
-
   setUploadStatus("");
+  setLocationIconStatus("");
 
   if (tempMarker) {
     map.removeLayer(tempMarker);
@@ -579,19 +777,28 @@ function searchPlace() {
       if (!res || !res.length) return alert("Không tìm thấy địa điểm.");
 
       const p = res[0];
-      map.flyTo([Number(p.lat), Number(p.lon)], 16);
+      const lat = Number(p.lat);
+      const lng = Number(p.lon);
 
-      L.marker([Number(p.lat), Number(p.lon)]).addTo(map)
+      map.flyTo([lat, lng], 16);
+
+      if (searchMarker) map.removeLayer(searchMarker);
+
+      searchMarker = L.marker([lat, lng])
+        .addTo(map)
         .bindPopup(`
           <div class="popup-title">${escapeHtml(p.display_name)}</div>
           <div class="popup-actions">
-            <a target="_blank" href="${googleDirectionsLink(p.lat, p.lon)}">🚗 Chỉ đường Google Maps</a>
-            <button type="button" class="route-web-btn" onclick="showRouteOnMap(${Number(p.lat)}, ${Number(p.lon)})">🗺 Chỉ đường trên web</button>
+            <a target="_blank" href="${googleDirectionsLink(lat, lng)}">🚗 Chỉ đường Google Maps</a>
+            <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">🗺 Chỉ đường trên web</button>
           </div>
         `)
         .openPopup();
     })
-    .catch(() => alert("Lỗi tìm kiếm. Vui lòng thử lại."));
+    .catch(err => {
+      console.error(err);
+      alert("Lỗi tìm kiếm. Vui lòng thử lại.");
+    });
 }
 
 /* =========================
@@ -646,15 +853,8 @@ function renderUtilities() {
 function runUtility(u) {
   if (!u) return;
 
-  if (u.type === "call") {
-    window.location.href = `tel:${u.value}`;
-    return;
-  }
-
-  if (u.type === "link") {
-    window.open(u.value, "_blank", "noopener,noreferrer");
-    return;
-  }
+  if (u.type === "call") return callNumber(u.value);
+  if (u.type === "link") return openLink(u.value);
 
   if (u.type === "map") {
     const parts = String(u.value || "").split(",");
@@ -663,9 +863,7 @@ function runUtility(u) {
     const lat = Number(parts[0].trim());
     const lng = Number(parts[1].trim());
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return alert("Tọa độ không hợp lệ.");
-    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return alert("Tọa độ không hợp lệ.");
 
     showTab("locations");
     map.flyTo([lat, lng], 16);
@@ -692,33 +890,39 @@ db.ref("utilities").on("value", (snap) => {
   renderUtilities();
 });
 
-function saveUtility() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+async function saveUtility() {
+  requireAdmin();
 
   const title = (document.getElementById("utilTitle")?.value || "").trim();
   const type = (document.getElementById("utilType")?.value || "call").trim();
-  const value = (document.getElementById("utilValue")?.value || "").trim();
+  const valueRaw = (document.getElementById("utilValue")?.value || "").trim();
 
   if (!title) return alert("Vui lòng nhập tên tiện ích.");
-  if (!value) return alert("Vui lòng nhập giá trị tiện ích.");
+  if (!valueRaw) return alert("Vui lòng nhập giá trị tiện ích.");
 
+  const value = type === "link" ? normalizeUrl(valueRaw) : valueRaw;
   const payload = { title, type, value };
 
-  if (editingUtilityKey) {
-    db.ref("utilities/" + editingUtilityKey).set(payload);
-    editingUtilityKey = null;
-    document.getElementById("utilityMode").textContent = "Chế độ: Thêm mới";
-    alert("Đã cập nhật tiện ích.");
-  } else {
-    db.ref("utilities").push(payload);
-    alert("Đã thêm tiện ích.");
-  }
+  try {
+    if (editingUtilityKey) {
+      await db.ref("utilities/" + editingUtilityKey).set(payload);
+      editingUtilityKey = null;
+      document.getElementById("utilityMode").textContent = "Chế độ: Thêm mới";
+      alert("Đã cập nhật tiện ích.");
+    } else {
+      await db.ref("utilities").push(payload);
+      alert("Đã thêm tiện ích.");
+    }
 
-  resetUtilityForm();
+    resetUtilityForm();
+  } catch (err) {
+    console.error(err);
+    alert("Lưu tiện ích thất bại.");
+  }
 }
 
 function editUtility(key) {
-  if (!isAdmin) return;
+  requireAdmin();
 
   const u = allUtilityData[key];
   if (!u) return;
@@ -732,16 +936,20 @@ function editUtility(key) {
   showTab("admin");
 }
 
-function deleteUtility(key) {
-  if (!isAdmin) return;
+async function deleteUtility(key) {
+  requireAdmin();
 
   const u = allUtilityData[key];
   if (!u) return;
-
   if (!confirm(`Xóa tiện ích "${u.title}"?`)) return;
-  db.ref("utilities/" + key).remove();
 
-  if (editingUtilityKey === key) resetUtilityForm();
+  try {
+    await db.ref("utilities/" + key).remove();
+    if (editingUtilityKey === key) resetUtilityForm();
+  } catch (err) {
+    console.error(err);
+    alert("Xóa tiện ích thất bại.");
+  }
 }
 
 function resetUtilityForm() {
@@ -753,16 +961,21 @@ function resetUtilityForm() {
 }
 
 /* =========================
-   Admin auth
+   Admin auth with Firebase
 ========================= */
-function loginAdmin() {
-  const pass = (document.getElementById("adminPass")?.value || "").trim();
+function applyAdminUi(user) {
+  isAdmin = isAdminUser(user);
 
-  if (pass === "DOANHATU2025") {
-    isAdmin = true;
-    document.getElementById("adminAuth").style.display = "none";
-    document.getElementById("adminPanel").style.display = "block";
-    document.getElementById("btnLogout").style.display = "inline-flex";
+  const adminAuth = document.getElementById("adminAuth");
+  const adminPanel = document.getElementById("adminPanel");
+  const btnLogout = document.getElementById("btnLogout");
+  const adminTabBtn = document.querySelector('.tabbtn[data-tab="admin"]');
+
+  if (isAdmin) {
+    if (adminAuth) adminAuth.style.display = "none";
+    if (adminPanel) adminPanel.style.display = "block";
+    if (btnLogout) btnLogout.style.display = "inline-flex";
+    if (adminTabBtn) adminTabBtn.style.display = "inline-flex";
 
     hydrateCloudinarySettings();
     renderLocations();
@@ -771,77 +984,94 @@ function loginAdmin() {
     renderLatestNews();
     renderAdminNews();
     renderAdminHomeCards();
-
-    alert("✅ Admin đã đăng nhập.");
+    setAdminAuthStatus("");
   } else {
-    alert("Sai mật khẩu.");
+    if (adminAuth) adminAuth.style.display = "block";
+    if (adminPanel) adminPanel.style.display = "none";
+    if (btnLogout) btnLogout.style.display = "none";
+    if (adminTabBtn) adminTabBtn.style.display = "inline-flex";
   }
 }
 
-function logoutAdmin() {
-  isAdmin = false;
-  editingLocationKey = null;
-  editingUtilityKey = null;
-  editingNewsKey = null;
-  editingHomeCardKey = null;
+async function loginAdmin() {
+  const email = (document.getElementById("adminEmail")?.value || "").trim();
+  const pass = (document.getElementById("adminPass")?.value || "").trim();
 
-  document.getElementById("adminPass").value = "";
-  document.getElementById("adminAuth").style.display = "block";
-  document.getElementById("adminPanel").style.display = "none";
-  document.getElementById("btnLogout").style.display = "none";
-
-  resetLocationForm();
-  resetUtilityForm();
-  resetNewsForm();
-  renderLocations();
-  renderUtilities();
-}
-
-/* =========================
-   Site Content / News
-========================= */
-let siteContentData = {
-  logoUrl: "",
-  heroMediaType: "image",
-  heroMediaUrl: "",
-  homeCards: {}
-};
-
-let newsData = {};
-let editingNewsKey = null;
-let editingHomeCardKey = null;
-
-/* =========================
-   Cloudinary generic upload
-========================= */
-async function uploadFileToCloudinary(file, resourceType = "image") {
-  const { cloudName, uploadPreset } = getCloudinarySettings();
-
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Thiếu cấu hình Cloudinary");
+  if (!email || !pass) {
+    setAdminAuthStatus("Vui lòng nhập email và mật khẩu.", true);
+    return;
   }
 
-  const form = new FormData();
-  form.append("file", file);
-  form.append("upload_preset", uploadPreset);
+  try {
+    setAdminAuthStatus("Đang đăng nhập...");
+    const cred = await auth.signInWithEmailAndPassword(email, pass);
 
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${resourceType}/upload`,
-    {
-      method: "POST",
-      body: form
+    if (!isAdminUser(cred.user)) {
+      await auth.signOut();
+      setAdminAuthStatus("Tài khoản này không phải admin.", true);
+      return;
     }
-  );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Upload thất bại");
+    setAdminAuthStatus("Đăng nhập thành công.");
+    alert("✅ Admin đã đăng nhập.");
+  } catch (err) {
+    console.error("Firebase login error:", err);
+
+    // 👇 HIỆN LỖI THẬT
+    setAdminAuthStatus(
+      `Lỗi: ${err.code || "unknown"} - ${err.message || ""}`,
+      true
+    );
+  }
+}
+
+async function logoutAdmin() {
+  try {
+    await auth.signOut();
+    alert("Đã đăng xuất admin.");
+  } catch (err) {
+    console.error(err);
+    alert("Đăng xuất thất bại.");
+  }
+}
+
+async function sendAdminPasswordReset() {
+  const email = (document.getElementById("adminEmail")?.value || "").trim();
+  if (!email) {
+    setAdminAuthStatus("Nhập email admin để gửi link đặt lại mật khẩu.", true);
+    return;
   }
 
-  const data = await response.json();
-  if (!data.secure_url) throw new Error("Không lấy được secure_url");
-  return data.secure_url;
+  try {
+    auth.languageCode = "vi";
+    await auth.sendPasswordResetEmail(email);
+    setAdminAuthStatus("Đã gửi email đặt lại mật khẩu.");
+  } catch (err) {
+    console.error(err);
+    setAdminAuthStatus("Không gửi được email đặt lại mật khẩu.", true);
+  }
 }
+
+auth.onAuthStateChanged((user) => {
+  applyAdminUi(user);
+
+  if (!isAdminUser(user)) {
+    editingLocationKey = null;
+    editingUtilityKey = null;
+    editingNewsKey = null;
+    editingHomeCardKey = null;
+
+    const passEl = document.getElementById("adminPass");
+    if (passEl) passEl.value = "";
+
+    resetLocationForm();
+    resetUtilityForm();
+    resetNewsForm();
+    resetHomeCardForm();
+    renderLocations();
+    renderUtilities();
+  }
+});
 
 /* =========================
    Firebase listeners
@@ -865,25 +1095,23 @@ db.ref("news").on("value", (snap) => {
   snap.forEach(child => {
     obj[child.key] = child.val();
   });
+
   newsData = obj;
   renderLatestNews();
   renderAdminNews();
 });
 
 /* =========================
-   Render site logo
+   Site logo
 ========================= */
 function renderSiteLogo() {
   const logoEl = document.getElementById("siteLogo");
   if (!logoEl) return;
-
-  if (siteContentData.logoUrl) {
-    logoEl.src = siteContentData.logoUrl;
-  }
+  if (siteContentData.logoUrl) logoEl.src = siteContentData.logoUrl;
 }
 
 async function uploadSiteLogo() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+  requireAdmin();
 
   const input = document.getElementById("logoFile");
   const file = input?.files?.[0];
@@ -941,7 +1169,7 @@ function renderHeroMedia() {
 }
 
 async function uploadHeroMedia() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+  requireAdmin();
 
   const type = document.getElementById("heroMediaType")?.value || "image";
   const input = document.getElementById("heroMediaFile");
@@ -964,21 +1192,27 @@ async function uploadHeroMedia() {
   }
 }
 
-function saveHeroMedia() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+async function saveHeroMedia() {
+  requireAdmin();
 
   const type = document.getElementById("heroMediaType")?.value || "image";
-  const url = (document.getElementById("heroMediaUrl")?.value || "").trim();
+  const rawUrl = (document.getElementById("heroMediaUrl")?.value || "").trim();
+  const url = type === "youtube" ? rawUrl : normalizeUrl(rawUrl);
 
   if (!url) return alert("Vui lòng nhập hoặc tải URL media.");
 
-  db.ref("siteContent").update({
-    heroMediaType: type,
-    heroMediaUrl: url
-  });
+  try {
+    await db.ref("siteContent").update({
+      heroMediaType: type,
+      heroMediaUrl: url
+    });
 
-  const status = document.getElementById("heroMediaStatus");
-  if (status) status.textContent = "Đã lưu media trang chủ.";
+    const status = document.getElementById("heroMediaStatus");
+    if (status) status.textContent = "Đã lưu media trang chủ.";
+  } catch (err) {
+    console.error(err);
+    alert("Lưu media thất bại.");
+  }
 }
 
 /* =========================
@@ -993,7 +1227,7 @@ function renderHomeCards() {
 
   box.innerHTML = cards
     .slice(0, 3)
-    .map(([key, item]) => `
+    .map(([, item]) => `
       <div class="info-card">
         ${
           item.imageUrl
@@ -1030,7 +1264,7 @@ function renderAdminHomeCards() {
 }
 
 async function uploadHomeCardImage() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+  requireAdmin();
 
   const input = document.getElementById("homeCardFile");
   const file = input?.files?.[0];
@@ -1051,34 +1285,38 @@ async function uploadHomeCardImage() {
   }
 }
 
-function saveHomeCard() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+async function saveHomeCard() {
+  requireAdmin();
 
   const title = (document.getElementById("homeCardTitle")?.value || "").trim();
   const desc = (document.getElementById("homeCardDesc")?.value || "").trim();
-  const imageUrl = (document.getElementById("homeCardImageUrl")?.value || "").trim();
+  const imageUrl = normalizeUrl(document.getElementById("homeCardImageUrl")?.value || "");
 
   if (!title) return alert("Vui lòng nhập tiêu đề khối.");
 
   const payload = { title, desc, imageUrl };
 
-  if (editingHomeCardKey) {
-    db.ref("siteContent/homeCards/" + editingHomeCardKey).set(payload);
-    editingHomeCardKey = null;
-  } else {
-    db.ref("siteContent/homeCards").push(payload);
+  try {
+    if (editingHomeCardKey) {
+      await db.ref("siteContent/homeCards/" + editingHomeCardKey).set(payload);
+      editingHomeCardKey = null;
+    } else {
+      await db.ref("siteContent/homeCards").push(payload);
+    }
+
+    resetHomeCardForm();
+
+    const status = document.getElementById("homeCardStatus");
+    if (status) status.textContent = "Đã lưu khối hình.";
+  } catch (err) {
+    console.error(err);
+    alert("Lưu khối hình thất bại.");
   }
-
-  document.getElementById("homeCardTitle").value = "";
-  document.getElementById("homeCardDesc").value = "";
-  document.getElementById("homeCardImageUrl").value = "";
-  document.getElementById("homeCardFile").value = "";
-
-  const status = document.getElementById("homeCardStatus");
-  if (status) status.textContent = "Đã lưu khối hình.";
 }
 
 function editHomeCard(key) {
+  requireAdmin();
+
   const item = siteContentData.homeCards?.[key];
   if (!item) return;
 
@@ -1089,9 +1327,28 @@ function editHomeCard(key) {
   showTab("admin");
 }
 
-function deleteHomeCard(key) {
+async function deleteHomeCard(key) {
+  requireAdmin();
   if (!confirm("Xóa khối hình này?")) return;
-  db.ref("siteContent/homeCards/" + key).remove();
+
+  try {
+    await db.ref("siteContent/homeCards/" + key).remove();
+    if (editingHomeCardKey === key) resetHomeCardForm();
+  } catch (err) {
+    console.error(err);
+    alert("Xóa khối hình thất bại.");
+  }
+}
+
+function resetHomeCardForm() {
+  editingHomeCardKey = null;
+  const ids = ["homeCardTitle", "homeCardDesc", "homeCardImageUrl", "homeCardFile"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  const statusEl = document.getElementById("homeCardStatus");
+  if (statusEl) statusEl.textContent = "";
 }
 
 /* =========================
@@ -1109,7 +1366,7 @@ function renderLatestNews() {
     return;
   }
 
-  box.innerHTML = items.map(([key, item]) => `
+  box.innerHTML = items.map(([, item]) => `
     <div class="news-card">
       <div class="news-card__title">${escapeHtml(item.title || "")}</div>
       <div class="news-card__desc">${escapeHtml(item.desc || "")}</div>
@@ -1142,33 +1399,42 @@ function renderAdminNews() {
   `).join("");
 }
 
-function saveNewsItem() {
-  if (!isAdmin) return alert("Bạn chưa đăng nhập admin.");
+async function saveNewsItem() {
+  requireAdmin();
 
   const title = (document.getElementById("newsTitle")?.value || "").trim();
   const desc = (document.getElementById("newsDesc")?.value || "").trim();
-  const link = (document.getElementById("newsLink")?.value || "").trim();
+  const link = normalizeUrl(document.getElementById("newsLink")?.value || "");
 
   if (!title) return alert("Vui lòng nhập tiêu đề bản tin.");
 
-  const payload = {
-    title,
-    desc,
-    link,
-    createdAt: Date.now()
-  };
+  try {
+    if (editingNewsKey) {
+      await db.ref("news/" + editingNewsKey).update({
+        title,
+        desc,
+        link,
+        updatedAt: Date.now()
+      });
+    } else {
+      await db.ref("news").push({
+        title,
+        desc,
+        link,
+        createdAt: Date.now()
+      });
+    }
 
-  if (editingNewsKey) {
-    db.ref("news/" + editingNewsKey).update(payload);
-    editingNewsKey = null;
-  } else {
-    db.ref("news").push(payload);
+    resetNewsForm();
+  } catch (err) {
+    console.error(err);
+    alert("Lưu bản tin thất bại.");
   }
-
-  resetNewsForm();
 }
 
 function editNewsItem(key) {
+  requireAdmin();
+
   const item = newsData[key];
   if (!item) return;
 
@@ -1179,16 +1445,26 @@ function editNewsItem(key) {
   showTab("admin");
 }
 
-function deleteNewsItem(key) {
+async function deleteNewsItem(key) {
+  requireAdmin();
   if (!confirm("Xóa bản tin này?")) return;
-  db.ref("news/" + key).remove();
+
+  try {
+    await db.ref("news/" + key).remove();
+    if (editingNewsKey === key) resetNewsForm();
+  } catch (err) {
+    console.error(err);
+    alert("Xóa bản tin thất bại.");
+  }
 }
 
 function resetNewsForm() {
   editingNewsKey = null;
-  document.getElementById("newsTitle").value = "";
-  document.getElementById("newsDesc").value = "";
-  document.getElementById("newsLink").value = "";
+  const ids = ["newsTitle", "newsDesc", "newsLink"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
 }
 
 /* =========================
@@ -1202,8 +1478,4 @@ window.addEventListener("load", () => {
   setTimeout(() => {
     map.invalidateSize();
   }, 300);
-});
-
-window.addEventListener("resize", () => {
-  map.invalidateSize();
 });
