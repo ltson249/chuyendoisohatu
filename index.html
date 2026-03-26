@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -18,41 +19,47 @@
   <div class="app">
     <aside class="sidebar">
       <header class="topbar">
-        <div class="brand">
-          <img
-            id="siteLogo"
-            class="brand__logo"
-            src="https://upload.wikimedia.org/wikipedia/commons/a/a1/Logo_Huy_hi%E1%BB%87u_%C4%90o%C3%A0n.svg"
-            alt="Logo Đoàn"
-            onerror="this.src='https://dummyimage.com/96x96/e5eefb/1831ae.png&text=Logo';"
-          />
-          <div class="brand__text">
-            <div class="brand__title">ĐOÀN THANH NIÊN PHƯỜNG HÀ TU</div>
-            <div class="brand__subtitle">Cổng bản đồ số & tiện ích cộng đồng</div>
+        <div class="topbar__inner">
+          <div class="brand brand--center">
+            <img
+              id="siteLogo"
+              class="brand__logo"
+              src="https://upload.wikimedia.org/wikipedia/commons/a/a1/Logo_Huy_hi%E1%BB%87u_%C4%90o%C3%A0n.svg"
+              data-default-src="https://upload.wikimedia.org/wikipedia/commons/a/a1/Logo_Huy_hi%E1%BB%87u_%C4%90o%C3%A0n.svg"
+              alt="Logo Đoàn"
+              onerror="this.src='https://dummyimage.com/96x96/e5eefb/1831ae.png&text=Logo';"
+            />
+            <div class="brand__text">
+              <div class="brand__title">ĐOÀN THANH NIÊN PHƯỜNG HÀ TU</div>
+              <div class="brand__subtitle">Cổng bản đồ số & tiện ích cộng đồng</div>
+            </div>
           </div>
-        </div>
 
-        <nav class="tabs" role="tablist">
-          <button class="tabbtn active" data-tab="home" onclick="showTab('home')">🏠 Trang chủ</button>
-          <button class="tabbtn" data-tab="locations" onclick="showTab('locations')">📍 Địa điểm</button>
-          <button class="tabbtn" data-tab="tools" onclick="showTab('tools')">🧩 Tiện ích</button>
-          <button class="tabbtn admin-pill" data-tab="admin" onclick="showTab('admin')">🔐 Admin</button>
-        </nav>
+          <nav class="tabs" role="tablist" aria-label="Điều hướng chính">
+            <button class="tabbtn active" data-tab="home" onclick="showTab('home')">Trang chủ</button>
+            <button class="tabbtn" data-tab="locations" onclick="showTab('locations')">Địa điểm</button>
+            <button class="tabbtn" data-tab="tools" onclick="showTab('tools')">Tiện ích</button>
+            <button class="tabbtn admin-pill" data-tab="admin" onclick="showTab('admin')">Admin</button>
+          </nav>
+        </div>
       </header>
 
       <main class="panel">
         <section id="tab-home" class="tab active">
           <div class="card hero">
-            <div class="section-kicker">Trang thông tin điện tử</div>
-            <div class="hero__title">Bản đồ số Đoàn Thanh Niên Phường Hà Tu</div>
-            <div class="hero__desc">
+            <div class="section-kicker section-kicker--center">Trang thông tin điện tử</div>
+            <div class="hero__title hero__title--main">
+              BẢN ĐỒ SỐ ĐOÀN THANH NIÊN PHƯỜNG HÀ TU
+            </div>
+            <div class="hero__desc hero__desc--center">
               Cập nhật địa điểm sinh hoạt, điểm tình nguyện, công trình thanh niên và tiện ích phục vụ người dân.
             </div>
+
             <div class="hero__row">
               <input id="searchInput" class="input" placeholder="Tìm địa điểm (VD: Nhà văn hóa Hà Tu, UBND...)" />
               <button class="btn" onclick="searchPlace()">Tìm</button>
             </div>
-            <div class="hint">📌 Mẹo: bấm 1 địa điểm trong tab “Địa điểm” để bay tới vị trí và mở chỉ đường.</div>
+            <div class="hint">Mẹo: bấm 1 địa điểm trong tab “Địa điểm” để bay tới vị trí và mở chỉ đường.</div>
           </div>
 
           <div class="hero-grid home-top-grid">
@@ -71,7 +78,7 @@
 
             <div class="card news-section news-section--home">
               <div class="row-head">
-                <h3 class="h3">📰 Bản tin mới nhất</h3>
+                <h3 class="h3">Bản tin mới nhất</h3>
                 <div class="small muted">Cập nhật trực tiếp từ Admin</div>
               </div>
               <div id="latestNewsList" class="news-list"></div>
@@ -79,10 +86,10 @@
           </div>
 
           <div class="quick-links quick-links--full" style="margin-top:14px;">
-            <button class="quick-link" onclick="showTab('locations')">📍 Danh sách địa điểm</button>
-            <button class="quick-link" onclick="showTab('tools')">🧩 Tiện ích cộng đồng</button>
-            <button class="quick-link" onclick="openLink('https://dichvucong.quangninh.gov.vn')">📄 Cổng DVC Quảng Ninh</button>
-            <button class="quick-link" onclick="openWeather()">🌦 Thời tiết Hà Tu</button>
+            <button class="quick-link" onclick="showTab('locations')">Danh sách địa điểm</button>
+            <button class="quick-link" onclick="showTab('tools')">Tiện ích cộng đồng</button>
+            <button class="quick-link" onclick="openLink('https://dichvucong.quangninh.gov.vn')">Cổng DVC Quảng Ninh</button>
+            <button class="quick-link" onclick="openWeather()">Thời tiết Hà Tu</button>
           </div>
 
           <div class="info-grid" id="homeCards">
@@ -107,29 +114,49 @@
         </section>
 
         <section id="tab-locations" class="tab">
-          <div class="row-head">
-            <h3 class="h3">📍 Danh sách địa điểm</h3>
-            <div class="small muted" id="locationsCount">0 mục</div>
+          <div class="card">
+            <div class="row-head">
+              <h3 class="h3">Danh sách địa điểm</h3>
+              <div class="small muted" id="locationsCount">0 mục</div>
+            </div>
+
+            <div class="grid2">
+              <div>
+                <label class="label">Tìm trong các địa điểm đã ghim</label>
+                <input id="locationFilter" class="input" placeholder="Lọc theo tên / mô tả / nhóm..." oninput="renderLocations()" />
+                <div class="hint">Chỉ lọc trong dữ liệu địa điểm đã ghim.</div>
+              </div>
+
+              <div>
+                <label class="label">Tìm kiếm vị trí giống trang chủ</label>
+                <div class="hero__row">
+                  <input id="locationSearchInput" class="input" placeholder="Tìm vị trí bất kỳ trên bản đồ..." />
+                  <button class="btn" onclick="searchPlaceFromLocations()">Tìm</button>
+                </div>
+                <div class="hint">Dùng để tra cứu nhanh trên bản đồ như ở trang chủ.</div>
+              </div>
+            </div>
           </div>
 
-          <div class="filters">
-            <input id="locationFilter" class="input" placeholder="Lọc theo tên / mô tả..." oninput="renderLocations()" />
+          <div class="card" style="margin-top:14px;">
+            <div class="row-head">
+              <h3 class="h3">Phân loại địa điểm theo nhóm</h3>
+            </div>
+            <div id="location-list" class="list"></div>
           </div>
-
-          <div id="location-list" class="list"></div>
         </section>
 
         <section id="tab-tools" class="tab">
-          <h3 class="h3">🧩 Tiện ích cố định</h3>
+          <h3 class="h3">Tiện ích cố định</h3>
           <div class="list">
-            <div class="item-card" onclick="openLink('https://dichvucong.quangninh.gov.vn')">📄 Cổng DVC Quảng Ninh</div>
-            <div class="item-card" onclick="openWeather()">🌦 Thời tiết Hà Tu</div>
+            <div class="item-card" onclick="openLink('https://dichvucong.quangninh.gov.vn')">Cổng DVC Quảng Ninh</div>
+            <div class="item-card" onclick="openWeather()">Thời tiết Hà Tu</div>
           </div>
 
           <hr class="sep" />
 
           <div class="row-head">
-            <h3 class="h3">🧩 Tiện ích do Admin tạo</h3>
+            <h3 class="h3">Tiện ích do Admin tạo</h3>
             <div class="small muted">Admin có thể thêm/sửa/xóa</div>
           </div>
 
@@ -139,8 +166,8 @@
         <section id="tab-admin" class="tab">
           <div class="card">
             <div class="row-head">
-              <h3 class="h3">🔐 Khu vực quản trị</h3>
-              <button id="btnLogout" class="btn btn-ghost" style="display:none" onclick="logoutAdmin()">Đăng xuất</button>
+              <h3 class="h3">Khu vực quản trị</h3>
+              <button id="btnLogout" class="btn btn-ghost btn-fit" style="display:none" onclick="logoutAdmin()">Đăng xuất</button>
             </div>
 
             <div id="adminAuth">
@@ -159,15 +186,13 @@
             <div id="adminPanel" style="display:none">
               <div class="subcard upload-config-card" style="margin-bottom:12px;">
                 <div class="row-head">
-                  <h4 class="h4">🖼 Cấu hình upload ảnh</h4>
+                  <h4 class="h4">Cấu hình upload ảnh</h4>
                   <span class="small muted">Cloudinary</span>
                 </div>
-
                 <div class="grid2">
                   <input id="cloudName" class="input" placeholder="Cloudinary cloud name" />
                   <input id="uploadPreset" class="input" placeholder="Upload preset" />
                 </div>
-
                 <div class="actions">
                   <button class="btn btn-ghost" onclick="saveCloudinarySettings()">Lưu cấu hình upload</button>
                 </div>
@@ -175,122 +200,114 @@
 
               <div class="subcard" style="margin-bottom:12px;">
                 <div class="row-head">
-                  <h4 class="h4">🖼 Quản lý giao diện trang chủ</h4>
-                  <span class="small muted">Logo / Banner / Hình ảnh / Bản tin</span>
+                  <h4 class="h4">Cập nhật logo website</h4>
                 </div>
-
                 <div class="grid2">
-                  <div class="subcard">
-                    <h4 class="h4">Logo website</h4>
-                    <input id="logoFile" class="input" type="file" accept="image/*" />
-                    <div class="actions">
-                      <button type="button" class="btn btn-ghost" onclick="uploadSiteLogo()">Tải logo lên</button>
-                    </div>
-                    <div id="logoUploadStatus" class="small muted"></div>
-                  </div>
-
-                  <div class="subcard">
-                    <h4 class="h4">Banner / Video nổi bật</h4>
-                    <select id="heroMediaType" class="input">
-                      <option value="image">Ảnh</option>
-                      <option value="video">Video MP4</option>
-                      <option value="youtube">YouTube Embed URL</option>
-                    </select>
-
-                    <input id="heroMediaUrl" class="input" placeholder="URL ảnh / video / YouTube embed" style="margin-top:10px;" />
-                    <input id="heroMediaFile" class="input" type="file" accept="image/*,video/*" style="margin-top:10px;" />
-
-                    <div class="actions">
-                      <button type="button" class="btn btn-ghost" onclick="uploadHeroMedia()">Tải media lên</button>
-                      <button type="button" class="btn" onclick="saveHeroMedia()">Lưu media</button>
-                    </div>
-                    <div id="heroMediaStatus" class="small muted"></div>
-                  </div>
+                  <input id="logoFile" class="input" type="file" accept="image/*" />
+                  <div id="logoUploadStatus" class="hint"></div>
                 </div>
-
-                <div class="subcard" style="margin-top:12px;">
-                  <div class="row-head">
-                    <h4 class="h4">3 khối hình ảnh trang chủ</h4>
-                    <span class="small muted">Thêm / sửa từng khối</span>
-                  </div>
-
-                  <div class="grid2">
-                    <input id="homeCardTitle" class="input" placeholder="Tiêu đề khối" />
-                    <input id="homeCardImageUrl" class="input" placeholder="URL ảnh khối" />
-                  </div>
-                  <textarea id="homeCardDesc" class="input" rows="3" placeholder="Mô tả ngắn" style="margin-top:10px;"></textarea>
-                  <input id="homeCardFile" class="input" type="file" accept="image/*" style="margin-top:10px;" />
-
-                  <div class="actions">
-                    <button type="button" class="btn btn-ghost" onclick="uploadHomeCardImage()">Tải ảnh khối lên</button>
-                    <button type="button" class="btn" onclick="saveHomeCard()">Lưu khối hình</button>
-                  </div>
-
-                  <div id="homeCardStatus" class="small muted"></div>
-                  <div id="adminHomeCardList" class="list" style="margin-top:12px;"></div>
-                </div>
-
-                <div class="subcard" style="margin-top:12px;">
-                  <div class="row-head">
-                    <h4 class="h4">Bản tin mới nhất</h4>
-                    <span class="small muted">Thêm / sửa / xóa trực tiếp</span>
-                  </div>
-
-                  <input id="newsTitle" class="input" placeholder="Tiêu đề bản tin" />
-                  <textarea id="newsDesc" class="input" rows="3" placeholder="Mô tả ngắn" style="margin-top:10px;"></textarea>
-                  <input id="newsLink" class="input" placeholder="Link chi tiết (nếu có)" style="margin-top:10px;" />
-
-                  <div class="actions">
-                    <button type="button" class="btn" onclick="saveNewsItem()">Lưu bản tin</button>
-                    <button type="button" class="btn btn-ghost" onclick="resetNewsForm()">Làm mới</button>
-                  </div>
-
-                  <div id="adminNewsList" class="list" style="margin-top:12px;"></div>
+                <div class="actions">
+                  <button class="btn" onclick="uploadSiteLogo()">Tải logo lên</button>
                 </div>
               </div>
 
-              <div class="admin-badge">✅ Đã xác thực admin qua Firebase</div>
+              <div class="subcard" style="margin-bottom:12px;">
+                <div class="row-head">
+                  <h4 class="h4">Banner / Video trang chủ</h4>
+                </div>
+
+                <div class="grid2">
+                  <select id="heroMediaType" class="input">
+                    <option value="image">Ảnh</option>
+                    <option value="video">Video</option>
+                    <option value="youtube">YouTube</option>
+                  </select>
+                  <input id="heroMediaFile" class="input" type="file" accept="image/*,video/*" />
+                </div>
+
+                <input id="heroMediaUrl" class="input" placeholder="URL media / YouTube embed URL" style="margin-top:10px;" />
+                <div id="heroMediaStatus" class="hint"></div>
+
+                <div class="actions">
+                  <button class="btn btn-ghost" onclick="uploadHeroMedia()">Tải media lên</button>
+                  <button class="btn" onclick="saveHeroMedia()">Lưu media</button>
+                </div>
+              </div>
+
+              <div class="subcard" style="margin-bottom:12px;">
+                <div class="row-head">
+                  <h4 class="h4">Khối hình trang chủ</h4>
+                </div>
+
+                <div class="grid2">
+                  <input id="homeCardTitle" class="input" placeholder="Tiêu đề" />
+                  <input id="homeCardFile" class="input" type="file" accept="image/*" />
+                </div>
+
+                <textarea id="homeCardDesc" class="input" placeholder="Mô tả" style="margin-top:10px;"></textarea>
+                <input id="homeCardImageUrl" class="input" placeholder="URL ảnh" style="margin-top:10px;" />
+                <div id="homeCardStatus" class="hint"></div>
+
+                <div class="actions">
+                  <button class="btn btn-ghost" onclick="uploadHomeCardImage()">Tải ảnh lên</button>
+                  <button class="btn" onclick="saveHomeCard()">Lưu khối hình</button>
+                </div>
+
+                <div id="adminHomeCardList" class="list" style="margin-top:12px;"></div>
+              </div>
+
+              <div class="subcard" style="margin-bottom:12px;">
+                <div class="row-head">
+                  <h4 class="h4">Quản lý bản tin</h4>
+                </div>
+
+                <input id="newsTitle" class="input" placeholder="Tiêu đề bản tin" />
+                <textarea id="newsDesc" class="input" placeholder="Nội dung ngắn" style="margin-top:10px;"></textarea>
+                <input id="newsLink" class="input" placeholder="Link chi tiết" style="margin-top:10px;" />
+
+                <div class="actions">
+                  <button class="btn" onclick="saveNewsItem()">Lưu bản tin</button>
+                  <button class="btn btn-ghost" onclick="resetNewsForm()">Làm mới</button>
+                </div>
+
+                <div id="adminNewsList" class="list" style="margin-top:12px;"></div>
+              </div>
 
               <div class="grid2">
                 <div class="subcard">
                   <div class="row-head">
-                    <h4 class="h4">📍 Quản lý địa điểm</h4>
+                    <h4 class="h4">Quản lý địa điểm</h4>
                     <span class="small muted" id="locationMode">Chế độ: Thêm mới</span>
                   </div>
 
                   <input id="name" class="input" placeholder="Tên địa điểm" />
-                  <textarea id="desc" class="input" rows="3" placeholder="Mô tả ngắn"></textarea>
+                  <input id="locationCategory" class="input" placeholder="Nhóm địa điểm (VD: Trường học, Cơ quan...)" style="margin-top:10px;" />
+                  <textarea id="desc" class="input" placeholder="Mô tả ngắn" style="margin-top:10px;"></textarea>
 
-                  <div class="grid2">
-                    <input id="lat" class="input" placeholder="Vĩ độ" readonly />
-                    <input id="lng" class="input" placeholder="Kinh độ" readonly />
+                  <div class="grid2" style="margin-top:10px;">
+                    <input id="lat" class="input" placeholder="Vĩ độ" />
+                    <input id="lng" class="input" placeholder="Kinh độ" />
                   </div>
 
-                  <label class="small muted">Ảnh địa điểm (chọn từ máy)</label>
+                  <div class="hint">Bấm trực tiếp lên bản đồ để lấy lat/lng.</div>
+
+                  <hr class="sep" />
+
                   <input id="locationFiles" class="input" type="file" accept="image/*" multiple />
-
-                  <label class="small muted" style="margin-top:10px; display:block;">Logo ghim trên bản đồ</label>
-                  <input id="locationIconFile" class="input" type="file" accept="image/*" />
-
+                  <div id="locationUploadStatus" class="hint"></div>
                   <div class="actions">
-                    <button type="button" class="btn btn-ghost" onclick="uploadLocationIcon()">📍 Tải logo ghim</button>
+                    <button class="btn btn-ghost" onclick="uploadLocationImages()">Tải ảnh lên</button>
                   </div>
 
-                  <div id="locationIconStatus" class="small muted"></div>
-                  <input id="locationIconUrl" class="input" type="hidden" />
-
+                  <input id="locationIconFile" class="input" type="file" accept="image/*" style="margin-top:10px;" />
+                  <input id="locationIconUrl" class="input" placeholder="URL logo marker" style="margin-top:10px;" />
+                  <div id="locationIconStatus" class="hint"></div>
                   <div class="actions">
-                    <button type="button" class="btn btn-ghost" onclick="uploadLocationImages()">⬆️ Tải ảnh lên</button>
+                    <button class="btn btn-ghost" onclick="uploadLocationIcon()">Tải logo marker</button>
                   </div>
 
-                  <div id="locationUploadStatus" class="small muted"></div>
-
-                  <div class="small muted" style="margin-top:8px;">Ảnh đã thêm</div>
+                  <textarea id="images" class="images-hidden-field"></textarea>
                   <div id="locationImagePreview" class="preview-grid"></div>
-
-                  <textarea id="images" class="images-hidden-field" aria-hidden="true"></textarea>
-
-                  <div class="hint">📌 Cách lấy tọa độ: bấm trực tiếp lên bản đồ (bên phải).</div>
 
                   <div class="actions">
                     <button class="btn" onclick="saveLocation()">Lưu địa điểm</button>
@@ -300,17 +317,17 @@
 
                 <div class="subcard">
                   <div class="row-head">
-                    <h4 class="h4">🧩 Quản lý tiện ích (Admin tạo)</h4>
+                    <h4 class="h4">Quản lý tiện ích (Admin tạo)</h4>
                     <span class="small muted" id="utilityMode">Chế độ: Thêm mới</span>
                   </div>
 
                   <input id="utilTitle" class="input" placeholder="Tên tiện ích" />
-                  <select id="utilType" class="input">
-                    <option value="call">📞 Gọi điện</option>
-                    <option value="map">📍 Địa điểm (lat,lng + chỉ đường)</option>
-                    <option value="link">🔗 Liên kết</option>
+                  <select id="utilType" class="input" style="margin-top:10px;">
+                    <option value="call">Gọi điện</option>
+                    <option value="map">Địa điểm (lat,lng + chỉ đường)</option>
+                    <option value="link">Liên kết</option>
                   </select>
-                  <input id="utilValue" class="input" placeholder="SĐT / lat,lng / link" />
+                  <input id="utilValue" class="input" placeholder="SĐT / lat,lng / link" style="margin-top:10px;" />
 
                   <div class="actions">
                     <button class="btn" onclick="saveUtility()">Lưu tiện ích</button>
@@ -335,17 +352,47 @@
     <section class="mapwrap">
       <div class="maphead">
         <div class="maphead__left">
-          <div class="maptitle">🗺 Bản đồ</div>
+          <div class="maptitle">Bản đồ</div>
           <div class="small muted">Bấm lên marker để xem chi tiết, chỉ đường Google Maps hoặc chỉ đường trên web</div>
         </div>
         <div class="maphead__right">
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-ghost" onclick="fitAllMarkers()">Xem tất cả</button>
+            <button class="btn btn-ghost btn-fit" onclick="fitAllMarkers()">Xem tất cả</button>
           </div>
         </div>
       </div>
       <div id="map"></div>
     </section>
+  </div>
+
+  <div class="chatbot">
+    <button id="chatbotToggle" class="chatbot-toggle" onclick="toggleChatbot()" aria-label="Mở hỗ trợ tra cứu">💬</button>
+
+    <div id="chatbotPanel" class="chatbot-panel" aria-live="polite">
+      <div class="chatbot-header">
+        <div>
+          <div class="chatbot-title">Hỗ trợ tra cứu</div>
+          <div class="chatbot-subtitle">Tra cứu địa điểm, tiện ích và nội dung trên website</div>
+        </div>
+        <button class="chatbot-close" onclick="toggleChatbot(false)" aria-label="Đóng chatbot">×</button>
+      </div>
+
+      <div id="chatbotMessages" class="chatbot-messages">
+        <div class="chat-msg bot">Xin chào, tôi có thể hỗ trợ tra cứu địa điểm, tiện ích và nội dung trong website.</div>
+      </div>
+
+      <div class="chatbot-tools">
+        <button id="voiceBtn" class="btn btn-ghost btn-fit" onclick="toggleVoiceInput()">🎤 Nói</button>
+        <button class="btn btn-ghost btn-fit" onclick="clearChatMessages()">🧹 Xóa chat</button>
+      </div>
+
+      <div class="chatbot-input-row">
+        <textarea id="chatbotInput" class="input chatbot-input" placeholder="Nhập câu hỏi của bạn..." onkeydown="handleChatInputKeydown(event)"></textarea>
+        <button class="btn chatbot-send" onclick="sendChatMessage()">Gửi</button>
+      </div>
+
+      <div id="chatbotStatus" class="hint chatbot-status"></div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

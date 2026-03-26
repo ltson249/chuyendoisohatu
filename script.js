@@ -1,3 +1,5 @@
+/* script.js */
+
 /* =========================
    Firebase
 ========================= */
@@ -12,12 +14,25 @@ const firebaseConfig = {
   measurementId: "G-2DLNK3SM7B"
 };
 
+let db = null;
+let auth = null;
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const auth = firebase.auth();
+try {
+  if (typeof firebase !== "undefined" && firebase?.apps) {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    db = firebase.database();
+    auth = firebase.auth();
+  } else {
+    console.warn("Firebase chưa được nạp.");
+  }
+} catch (err) {
+  console.error("Lỗi khởi tạo Firebase:", err);
+}
 
 const ADMIN_UID = "NZYYYPTukCh6OBBI1yZm5fqvMbB2";
+const CHATBOT_API_URL = window.CHATBOT_API_URL || "";
 
 /* =========================
    State
@@ -48,6 +63,13 @@ let siteContentData = {
 
 let newsData = {};
 
+let chatbotOpen = false;
+let chatHistory = [];
+let speechRecognition = null;
+let isVoiceListening = false;
+
+let map = null;
+
 /* =========================
    Helpers
 ========================= */
@@ -73,6 +95,19 @@ function normalizeUrl(url) {
   if (!value) return "";
   if (/^https?:\/\//i.test(value)) return value;
   return `https://${value}`;
+}
+
+function slugifyText(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function safeCategoryName(value) {
+  const raw = String(value || "").trim();
+  return raw || "Chưa phân loại";
 }
 
 function setActiveTabButton(tab) {
@@ -146,6 +181,20 @@ function requireAdmin() {
   }
 }
 
+function ensureDb() {
+  if (!db) {
+    alert("Firebase Database chưa sẵn sàng. Hãy kiểm tra lại kết nối hoặc cấu hình.");
+    throw new Error("Database unavailable");
+  }
+}
+
+function ensureAuth() {
+  if (!auth) {
+    alert("Firebase Auth chưa sẵn sàng. Hãy kiểm tra lại kết nối hoặc cấu hình.");
+    throw new Error("Auth unavailable");
+  }
+}
+
 function showTab(tab) {
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   const activeTab = document.getElementById("tab-" + tab);
@@ -164,43 +213,65 @@ function showTab(tab) {
   }
 
   setTimeout(() => {
-    map.invalidateSize();
+    if (map && typeof map.invalidateSize === "function") {
+      map.invalidateSize();
+    }
   }, 250);
 }
 
 /* =========================
    Map
 ========================= */
-const map = L.map("map", {
-  center: [20.943, 107.112],
-  zoom: 15,
-  minZoom: 12,
-  maxZoom: 18
-}).setView([20.943, 107.112], 15);
+function initMap() {
+  const mapEl = document.getElementById("map");
+  if (!mapEl) {
+    console.warn("Không tìm thấy #map");
+    return;
+  }
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "© OpenStreetMap"
-}).addTo(map);
+  if (typeof L === "undefined") {
+    console.warn("Leaflet chưa được nạp.");
+    return;
+  }
 
-map.on("click", (e) => {
-  if (!isAdmin) return;
+  try {
+    map = L.map("map", {
+      center: [20.943, 107.112],
+      zoom: 15,
+      minZoom: 12,
+      maxZoom: 18
+    }).setView([20.943, 107.112], 15);
 
-  const latEl = document.getElementById("lat");
-  const lngEl = document.getElementById("lng");
-  if (!latEl || !lngEl) return;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
 
-  latEl.value = e.latlng.lat.toFixed(6);
-  lngEl.value = e.latlng.lng.toFixed(6);
+    map.on("click", (e) => {
+      if (!isAdmin) return;
 
-  if (tempMarker) map.removeLayer(tempMarker);
+      const latEl = document.getElementById("lat");
+      const lngEl = document.getElementById("lng");
+      if (!latEl || !lngEl) return;
 
-  tempMarker = L.marker(e.latlng)
-    .addTo(map)
-    .bindPopup("📍 Đã chọn vị trí")
-    .openPopup();
-});
+      latEl.value = e.latlng.lat.toFixed(6);
+      lngEl.value = e.latlng.lng.toFixed(6);
+
+      if (tempMarker) map.removeLayer(tempMarker);
+
+      tempMarker = L.marker(e.latlng)
+        .addTo(map)
+        .bindPopup("📍 Đã chọn vị trí")
+        .openPopup();
+    });
+  } catch (err) {
+    console.error("Lỗi khởi tạo bản đồ:", err);
+    map = null;
+  }
+}
 
 function fitAllMarkers() {
+  if (!map || typeof L === "undefined") return;
+
   const latlngs = Object.values(allLocationData)
     .map(d => L.latLng(Number(d.lat), Number(d.lng)))
     .filter(ll => Number.isFinite(ll.lat) && Number.isFinite(ll.lng));
@@ -237,12 +308,16 @@ function getUserLocation() {
 
 async function showRouteOnMap(destinationLat, destinationLng) {
   try {
-    showTab("locations");
+    if (!map) {
+      alert("Bản đồ chưa sẵn sàng.");
+      return;
+    }
 
+    showTab("locations");
     const start = await getUserLocation();
     currentUserLatLng = start;
 
-    if (routeControl) {
+    if (routeControl && map) {
       map.removeControl(routeControl);
       routeControl = null;
     }
@@ -263,7 +338,7 @@ async function showRouteOnMap(destinationLat, destinationLng) {
       fitSelectedRoutes: true,
       show: true,
       lineOptions: {
-        styles: [{ color: "#2E8AED", opacity: 0.9, weight: 6 }]
+        styles: [{ color: "#0F4C81", opacity: 0.9, weight: 6 }]
       },
       createMarker: function (i, wp) {
         if (i === 0) return L.marker(wp.latLng).bindPopup("📍 Vị trí của bạn");
@@ -277,7 +352,7 @@ async function showRouteOnMap(destinationLat, destinationLng) {
 }
 
 function clearRouteOnMap() {
-  if (routeControl) {
+  if (routeControl && map) {
     map.removeControl(routeControl);
     routeControl = null;
   }
@@ -298,10 +373,8 @@ function getCloudinarySettings() {
 
 function saveCloudinarySettings() {
   requireAdmin();
-
   const cloudName = (document.getElementById("cloudName")?.value || "").trim();
   const uploadPreset = (document.getElementById("uploadPreset")?.value || "").trim();
-
   localStorage.setItem(CLOUDINARY_KEY, JSON.stringify({ cloudName, uploadPreset }));
   alert("Đã lưu cấu hình upload ảnh.");
 }
@@ -310,7 +383,6 @@ function hydrateCloudinarySettings() {
   const cfg = getCloudinarySettings();
   const cloudNameEl = document.getElementById("cloudName");
   const uploadPresetEl = document.getElementById("uploadPreset");
-
   if (cloudNameEl) cloudNameEl.value = cfg.cloudName || "";
   if (uploadPresetEl) uploadPresetEl.value = cfg.uploadPreset || "";
 }
@@ -326,19 +398,15 @@ async function uploadSingleFileToCloudinary(file, cloudName, uploadPreset) {
     { method: "POST", body: form }
   );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Upload thất bại");
-  }
-
   const data = await response.json();
-  if (!data.secure_url) throw new Error("Cloudinary không trả về secure_url");
+  if (!response.ok || !data.secure_url) {
+    throw new Error(data?.error?.message || "Upload thất bại");
+  }
   return data.secure_url;
 }
 
 async function uploadFileToCloudinary(file, resourceType = "image") {
   const { cloudName, uploadPreset } = getCloudinarySettings();
-
   if (!cloudName || !uploadPreset) throw new Error("Thiếu cấu hình Cloudinary");
 
   const form = new FormData();
@@ -350,13 +418,10 @@ async function uploadFileToCloudinary(file, resourceType = "image") {
     { method: "POST", body: form }
   );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Upload thất bại");
-  }
-
   const data = await response.json();
-  if (!data.secure_url) throw new Error("Không lấy được secure_url");
+  if (!response.ok || !data.secure_url) {
+    throw new Error(data?.error?.message || "Upload thất bại");
+  }
   return data.secure_url;
 }
 
@@ -466,98 +531,127 @@ function removeTempImage(index) {
    Locations
 ========================= */
 function buildLocationPopupHtml(d) {
-  const name = escapeHtml(d.name);
+  const name = escapeHtml(d.name || "Địa điểm");
   const desc = escapeHtml(d.desc || "");
+  const category = escapeHtml(safeCategoryName(d.category));
   const lat = Number(d.lat);
   const lng = Number(d.lng);
   const images = Array.isArray(d.images) ? d.images : [];
 
   const imagesHtml = images.length
-    ? `<div class="popup-images">${
-        images.slice(0, 8).map(url => `<img src="${escapeHtml(url)}" alt="Ảnh">`).join("")
-      }</div>`
+    ? `<div class="popup-images">${images.slice(0, 8).map(url => `<img src="${escapeHtml(url)}" alt="Ảnh">`).join("")}</div>`
     : "";
 
   return `
     <div class="popup-title">${name}</div>
+    <div class="popup-meta">Nhóm: ${category}</div>
     <div class="popup-desc">${desc}</div>
     <div class="popup-actions">
-      <a href="${googleDirectionsLink(lat, lng)}" target="_blank">🚗 Chỉ đường Google Maps</a>
-      <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">🗺 Chỉ đường trên web</button>
+      <a href="${googleDirectionsLink(lat, lng)}" target="_blank">Chỉ đường Google Maps</a>
+      <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">Chỉ đường trên web</button>
     </div>
     ${imagesHtml}
   `;
 }
 
 function clearAllMarkers() {
+  if (!map) return;
   Object.values(markersByKey).forEach(m => map.removeLayer(m));
   markersByKey = {};
+}
+
+function getFilteredLocationEntries() {
+  const filter = (document.getElementById("locationFilter")?.value || "").toLowerCase().trim();
+
+  return Object.entries(allLocationData).filter(([, d]) => {
+    const hay = `${d.name || ""} ${d.desc || ""} ${safeCategoryName(d.category)}`.toLowerCase();
+    return !filter || hay.includes(filter);
+  });
 }
 
 function renderLocations() {
   const list = document.getElementById("location-list");
   const count = document.getElementById("locationsCount");
-  const filter = (document.getElementById("locationFilter")?.value || "").toLowerCase().trim();
+  const filteredEntries = getFilteredLocationEntries();
 
-  const keys = Object.keys(allLocationData);
-  if (count) count.textContent = `${keys.length} mục`;
+  if (count) count.textContent = `${filteredEntries.length} mục`;
   if (!list) return;
 
   list.innerHTML = "";
 
-  const filteredKeys = keys.filter(k => {
-    const d = allLocationData[k] || {};
-    const hay = `${d.name || ""} ${d.desc || ""}`.toLowerCase();
-    return !filter || hay.includes(filter);
-  });
-
-  if (!filteredKeys.length) {
+  if (!filteredEntries.length) {
     list.innerHTML = `<div class="small muted">Chưa có địa điểm phù hợp.</div>`;
     return;
   }
 
-  filteredKeys
-    .sort((a, b) => (allLocationData[a].name || "").localeCompare(allLocationData[b].name || ""))
-    .forEach(key => {
-      const d = allLocationData[key];
-      const div = document.createElement("div");
-      div.className = "item-card";
+  const grouped = {};
+  filteredEntries.forEach(([key, d]) => {
+    const category = safeCategoryName(d.category);
+    if (!grouped[category]) grouped[category] = [];
+    grouped[category].push([key, d]);
+  });
 
-      const firstImg = (d.images && d.images.length) ? d.images[0] : "";
+  Object.keys(grouped)
+    .sort((a, b) => a.localeCompare(b, "vi"))
+    .forEach(category => {
+      const groupBox = document.createElement("div");
+      groupBox.className = "location-group";
 
-      div.innerHTML = `
-        <div style="display:flex; gap:10px; align-items:flex-start;">
-          ${firstImg ? `<img src="${escapeHtml(firstImg)}" alt="Ảnh" style="width:72px;height:54px;object-fit:cover;border-radius:10px;border:1px solid rgba(0,0,0,.08);">` : ""}
-          <div style="flex:1;">
-            <div style="font-weight:900;color:#1831AE;">${escapeHtml(d.name)}</div>
-            <div class="small muted" style="margin-top:2px;">${escapeHtml(d.desc || "")}</div>
-            <div class="popup-actions" style="margin-top:8px;">
-              <a href="${googleDirectionsLink(d.lat, d.lng)}" target="_blank">🚗 Chỉ đường</a>
-              <button type="button" class="route-web-btn" onclick="event.stopPropagation(); showRouteOnMap(${Number(d.lat)}, ${Number(d.lng)})">🗺 Trên web</button>
-            </div>
-          </div>
+      const entries = grouped[category].sort((a, b) =>
+        String(a[1].name || "").localeCompare(String(b[1].name || ""), "vi")
+      );
+
+      groupBox.innerHTML = `
+        <div class="location-group__head">
+          <div class="location-group__title">${escapeHtml(category)}</div>
+          <div class="small muted">${entries.length} địa điểm</div>
         </div>
+        <div class="location-group__list">
+          ${entries.map(([key, d]) => {
+            const firstImg = (d.images && d.images.length) ? d.images[0] : "";
+            const lat = Number(d.lat);
+            const lng = Number(d.lng);
 
-        ${isAdmin ? `
-          <div style="display:flex; gap:8px; margin-top:10px;">
-            <button class="btn btn-ghost" onclick="event.stopPropagation(); editLocation('${key}')">Sửa</button>
-            <button class="btn" style="background:linear-gradient(135deg,#F63E1D,#EF4444);" onclick="event.stopPropagation(); deleteLocation('${key}')">Xóa</button>
-          </div>
-        ` : ""}
+            return `
+              <div class="item-card location-item-card" onclick="focusLocation('${key}')">
+                <div style="display:flex; gap:10px; align-items:flex-start;">
+                  ${firstImg ? `<img src="${escapeHtml(firstImg)}" alt="Ảnh" style="width:72px;height:54px;object-fit:cover;border-radius:10px;border:1px solid rgba(0,0,0,.08);">` : ""}
+                  <div style="flex:1;">
+                    <div style="font-weight:800;color:#0B4F8A;">${escapeHtml(d.name || "")}</div>
+                    <div class="small muted" style="margin-top:2px;">${escapeHtml(d.desc || "")}</div>
+                    <div class="small muted" style="margin-top:4px;">Nhóm: ${escapeHtml(safeCategoryName(d.category))}</div>
+                    <div class="popup-actions" style="margin-top:8px;">
+                      <a href="${googleDirectionsLink(lat, lng)}" target="_blank" onclick="event.stopPropagation()">Chỉ đường</a>
+                      <button type="button" class="route-web-btn" onclick="event.stopPropagation(); showRouteOnMap(${lat}, ${lng})">Trên web</button>
+                    </div>
+                  </div>
+                </div>
+
+                ${isAdmin ? `
+                  <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button class="btn btn-ghost" onclick="event.stopPropagation(); editLocation('${key}')">Sửa</button>
+                    <button class="btn btn-danger" onclick="event.stopPropagation(); deleteLocation('${key}')">Xóa</button>
+                  </div>
+                ` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
       `;
 
-      div.onclick = () => {
-        showTab("locations");
-        const lat = Number(d.lat);
-        const lng = Number(d.lng);
-        map.flyTo([lat, lng], 16);
-
-        const marker = markersByKey[key];
-        if (marker) marker.openPopup();
-      };
-
-      list.appendChild(div);
+      list.appendChild(groupBox);
     });
+}
+
+function focusLocation(key) {
+  const d = allLocationData[key];
+  if (!d || !map) return;
+  showTab("locations");
+  const lat = Number(d.lat);
+  const lng = Number(d.lng);
+  map.flyTo([lat, lng], 16);
+  const marker = markersByKey[key];
+  if (marker) marker.openPopup();
 }
 
 function cross(o, a, b) {
@@ -595,6 +689,8 @@ function convexHull(points) {
 }
 
 function refreshMarkerClusterPolygon() {
+  if (!map || typeof L === "undefined") return;
+
   if (markerClusterPolygon) {
     map.removeLayer(markerClusterPolygon);
     markerClusterPolygon = null;
@@ -610,9 +706,9 @@ function refreshMarkerClusterPolygon() {
   const hullLatLngs = hull.map(p => [p.lat, p.lng]);
 
   markerClusterPolygon = L.polygon(hullLatLngs, {
-    color: "#d32f2f",
+    color: "#C62828",
     weight: 3,
-    fillColor: "#ef9a9a",
+    fillColor: "#f5b7b1",
     fillOpacity: 0.12
   }).addTo(map);
 
@@ -624,6 +720,8 @@ function refreshMarkerClusterPolygon() {
 }
 
 function refreshMarkers() {
+  if (!map || typeof L === "undefined") return;
+
   clearAllMarkers();
 
   Object.keys(allLocationData).forEach(key => {
@@ -635,7 +733,6 @@ function refreshMarkers() {
 
     const markerIcon = buildCustomLocationIcon(d.iconUrl || "");
     const marker = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
-
     marker.bindPopup(buildLocationPopupHtml(d));
     markersByKey[key] = marker;
   });
@@ -643,25 +740,32 @@ function refreshMarkers() {
   refreshMarkerClusterPolygon();
 }
 
-db.ref("locations").on("value", (snap) => {
-  const obj = {};
-  snap.forEach(child => {
-    obj[child.key] = child.val();
-  });
+function bindLocationListener() {
+  if (!db) return;
 
-  allLocationData = obj;
-  refreshMarkers();
-  renderLocations();
-});
+  db.ref("locations").on("value", (snap) => {
+    const obj = {};
+    snap.forEach(child => {
+      obj[child.key] = child.val();
+    });
+
+    allLocationData = obj;
+    refreshMarkers();
+    renderLocations();
+  }, (err) => {
+    console.error("Lỗi đọc locations:", err);
+  });
+}
 
 async function saveLocation() {
   requireAdmin();
+  ensureDb();
 
   const name = (document.getElementById("name")?.value || "").trim();
+  const category = safeCategoryName(document.getElementById("locationCategory")?.value || "");
   const desc = (document.getElementById("desc")?.value || "").trim();
   const lat = (document.getElementById("lat")?.value || "").trim();
   const lng = (document.getElementById("lng")?.value || "").trim();
-
   syncImagesField();
   const images = parseImages(document.getElementById("images")?.value || "");
   const locationIconUrl = (document.getElementById("locationIconUrl")?.value || "").trim();
@@ -671,6 +775,7 @@ async function saveLocation() {
 
   const payload = {
     name,
+    category,
     desc,
     lat: Number(lat),
     lng: Number(lng),
@@ -680,10 +785,9 @@ async function saveLocation() {
 
   try {
     if (editingLocationKey) {
-      await db.ref("locations/" + editingLocationKey).set(payload);
+      await db.ref("locations/" + editingLocationKey).update(payload);
       editingLocationKey = null;
-      const modeLabel = document.getElementById("locationMode");
-      if (modeLabel) modeLabel.textContent = "Chế độ: Thêm mới";
+      document.getElementById("locationMode").textContent = "Chế độ: Thêm mới";
       alert("Đã cập nhật địa điểm.");
     } else {
       await db.ref("locations").push(payload);
@@ -706,6 +810,7 @@ function editLocation(key) {
   editingLocationKey = key;
   document.getElementById("locationMode").textContent = "Chế độ: Sửa";
   document.getElementById("name").value = d.name || "";
+  document.getElementById("locationCategory").value = d.category || "";
   document.getElementById("desc").value = d.desc || "";
   document.getElementById("lat").value = Number(d.lat).toFixed(6);
   document.getElementById("lng").value = Number(d.lng).toFixed(6);
@@ -715,17 +820,14 @@ function editLocation(key) {
   renderLocationPreview();
 
   document.getElementById("locationIconUrl").value = d.iconUrl || "";
-  setLocationIconStatus(d.iconUrl ? "Đã có logo ghim cho địa điểm này." : "");
-
-  map.flyTo([Number(d.lat), Number(d.lng)], 16);
-  const m = markersByKey[key];
-  if (m) m.openPopup();
+  setLocationIconStatus(d.iconUrl ? "Đã có logo marker." : "");
 
   showTab("admin");
 }
 
 async function deleteLocation(key) {
   requireAdmin();
+  ensureDb();
 
   const d = allLocationData[key];
   if (!d) return;
@@ -742,12 +844,10 @@ async function deleteLocation(key) {
 
 function resetLocationForm() {
   editingLocationKey = null;
+  const modeEl = document.getElementById("locationMode");
+  if (modeEl) modeEl.textContent = "Chế độ: Thêm mới";
 
-  const locationMode = document.getElementById("locationMode");
-  if (locationMode) locationMode.textContent = "Chế độ: Thêm mới";
-
-  const ids = ["name", "desc", "lat", "lng", "locationFiles", "locationIconFile", "locationIconUrl"];
-  ids.forEach(id => {
+  ["name", "locationCategory", "desc", "lat", "lng", "locationFiles", "locationIconFile", "locationIconUrl"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = "";
   });
@@ -755,18 +855,17 @@ function resetLocationForm() {
   tempLocationImages = [];
   syncImagesField();
   renderLocationPreview();
-
   setUploadStatus("");
   setLocationIconStatus("");
 
-  if (tempMarker) {
+  if (tempMarker && map) {
     map.removeLayer(tempMarker);
     tempMarker = null;
   }
 }
 
-function searchPlace() {
-  const q = (document.getElementById("searchInput")?.value || "").trim();
+function searchPlaceByInputValue(query) {
+  const q = String(query || "").trim();
   if (!q) return;
 
   showTab("locations");
@@ -775,6 +874,7 @@ function searchPlace() {
     .then(r => r.json())
     .then(res => {
       if (!res || !res.length) return alert("Không tìm thấy địa điểm.");
+      if (!map) return alert("Bản đồ chưa sẵn sàng.");
 
       const p = res[0];
       const lat = Number(p.lat);
@@ -789,8 +889,8 @@ function searchPlace() {
         .bindPopup(`
           <div class="popup-title">${escapeHtml(p.display_name)}</div>
           <div class="popup-actions">
-            <a target="_blank" href="${googleDirectionsLink(lat, lng)}">🚗 Chỉ đường Google Maps</a>
-            <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">🗺 Chỉ đường trên web</button>
+            <a target="_blank" href="${googleDirectionsLink(lat, lng)}">Chỉ đường Google Maps</a>
+            <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">Chỉ đường trên web</button>
           </div>
         `)
         .openPopup();
@@ -801,37 +901,76 @@ function searchPlace() {
     });
 }
 
+function searchPlace() {
+  const q = document.getElementById("searchInput")?.value || "";
+  searchPlaceByInputValue(q);
+}
+
+function searchPlaceFromLocations() {
+  const q = document.getElementById("locationSearchInput")?.value || "";
+  searchPlaceByInputValue(q);
+}
+
 /* =========================
    Utilities
 ========================= */
+function normalizeUtilityRecord(u = {}) {
+  const title = u.title || u.name || u.label || u.text || "Tiện ích";
+  let type = u.type || u.action || "";
+  let value = u.value || u.url || u.link || u.phone || u.tel || "";
+
+  if (!type) {
+    if (u.phone || u.tel) {
+      type = "call";
+      value = u.phone || u.tel;
+    } else if (
+      (u.lat !== undefined && u.lng !== undefined) ||
+      /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(value))
+    ) {
+      type = "map";
+      if (!value && u.lat !== undefined && u.lng !== undefined) value = `${u.lat},${u.lng}`;
+    } else {
+      type = "link";
+      value = u.url || u.link || value;
+    }
+  }
+
+  if (type === "link") value = normalizeUrl(value);
+  return { title, type, value, raw: u };
+}
+
 function renderUtilities() {
   const box = document.getElementById("utilities-dynamic");
   if (!box) return;
 
   box.innerHTML = "";
 
-  const keys = Object.keys(allUtilityData);
-  if (!keys.length) {
+  const entries = Object.entries(allUtilityData || {});
+  if (!entries.length) {
     box.innerHTML = `<div class="small muted">Chưa có tiện ích do admin tạo.</div>`;
     return;
   }
 
-  keys
-    .sort((a, b) => (allUtilityData[a].title || "").localeCompare(allUtilityData[b].title || ""))
-    .forEach(key => {
-      const u = allUtilityData[key];
-      const div = document.createElement("div");
-      div.className = "item-card";
+  entries
+    .sort((a, b) => {
+      const ua = normalizeUtilityRecord(a[1]);
+      const ub = normalizeUtilityRecord(b[1]);
+      return String(ua.title).localeCompare(String(ub.title), "vi");
+    })
+    .forEach(([key, raw]) => {
+      const u = normalizeUtilityRecord(raw);
 
       const typeLabel =
-        u.type === "call" ? "📞 Gọi điện" :
-        u.type === "link" ? "🔗 Liên kết" :
-        "📍 Chỉ đường";
+        u.type === "call" ? "Gọi điện" :
+        u.type === "link" ? "Liên kết" :
+        "Chỉ đường";
 
+      const div = document.createElement("div");
+      div.className = "item-card";
       div.innerHTML = `
         <div style="display:flex; justify-content:space-between; gap:10px;">
           <div style="flex:1;">
-            <div style="font-weight:900;color:#1831AE;">${escapeHtml(u.title)}</div>
+            <div style="font-weight:800;color:#0B4F8A;">${escapeHtml(u.title)}</div>
             <div class="small muted">${typeLabel} • ${escapeHtml(u.value || "")}</div>
           </div>
           <div class="small muted">›</div>
@@ -840,58 +979,89 @@ function renderUtilities() {
         ${isAdmin ? `
           <div style="display:flex; gap:8px; margin-top:10px;">
             <button class="btn btn-ghost" onclick="event.stopPropagation(); editUtility('${key}')">Sửa</button>
-            <button class="btn" style="background:linear-gradient(135deg,#F63E1D,#EF4444);" onclick="event.stopPropagation(); deleteUtility('${key}')">Xóa</button>
+            <button class="btn btn-danger" onclick="event.stopPropagation(); deleteUtility('${key}')">Xóa</button>
           </div>
         ` : ""}
       `;
-
       div.onclick = () => runUtility(u);
       box.appendChild(div);
     });
 }
 
 function runUtility(u) {
-  if (!u) return;
+  const item = normalizeUtilityRecord(u);
+  const raw = item.raw || {};
 
-  if (u.type === "call") return callNumber(u.value);
-  if (u.type === "link") return openLink(u.value);
+  if (item.type === "call") {
+    if (!item.value) return alert("Tiện ích này chưa có số điện thoại.");
+    callNumber(item.value);
+    return;
+  }
 
-  if (u.type === "map") {
-    const parts = String(u.value || "").split(",");
-    if (parts.length < 2) return alert("Tiện ích map phải có dạng: lat,lng");
+  if (item.type === "link") {
+    if (!item.value) return alert("Tiện ích này chưa có liên kết.");
+    openLink(item.value);
+    return;
+  }
 
-    const lat = Number(parts[0].trim());
-    const lng = Number(parts[1].trim());
+  if (item.type === "map") {
+    const value = String(item.value || "").trim();
+    let lat, lng;
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return alert("Tọa độ không hợp lệ.");
+    if (/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(value)) {
+      const parts = value.split(",");
+      lat = Number(parts[0].trim());
+      lng = Number(parts[1].trim());
+    } else if (raw.lat !== undefined && raw.lng !== undefined) {
+      lat = Number(raw.lat);
+      lng = Number(raw.lng);
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      alert("Tiện ích bản đồ chưa có tọa độ hợp lệ.");
+      return;
+    }
 
     showTab("locations");
+
+    if (!map) {
+      alert("Bản đồ chưa sẵn sàng.");
+      return;
+    }
+
     map.flyTo([lat, lng], 16);
     L.popup()
       .setLatLng([lat, lng])
       .setContent(`
-        <div class="popup-title">${escapeHtml(u.title || "Tiện ích")}</div>
+        <div class="popup-title">${escapeHtml(item.title)}</div>
         <div class="popup-actions">
-          <a target="_blank" href="${googleDirectionsLink(lat, lng)}">🚗 Chỉ đường Google Maps</a>
-          <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">🗺 Chỉ đường trên web</button>
+          <a target="_blank" href="${googleDirectionsLink(lat, lng)}">Chỉ đường Google Maps</a>
+          <button type="button" class="route-web-btn" onclick="showRouteOnMap(${lat}, ${lng})">Chỉ đường trên web</button>
         </div>
       `)
       .openOn(map);
   }
 }
 
-db.ref("utilities").on("value", (snap) => {
-  const obj = {};
-  snap.forEach(child => {
-    obj[child.key] = child.val();
-  });
+function bindUtilityListener() {
+  if (!db) return;
 
-  allUtilityData = obj;
-  renderUtilities();
-});
+  db.ref("utilities").on("value", (snap) => {
+    const obj = {};
+    snap.forEach(child => {
+      obj[child.key] = child.val();
+    });
+
+    allUtilityData = obj;
+    renderUtilities();
+  }, (err) => {
+    console.error("Lỗi đọc utilities:", err);
+  });
+}
 
 async function saveUtility() {
   requireAdmin();
+  ensureDb();
 
   const title = (document.getElementById("utilTitle")?.value || "").trim();
   const type = (document.getElementById("utilType")?.value || "call").trim();
@@ -900,12 +1070,42 @@ async function saveUtility() {
   if (!title) return alert("Vui lòng nhập tên tiện ích.");
   if (!valueRaw) return alert("Vui lòng nhập giá trị tiện ích.");
 
-  const value = type === "link" ? normalizeUrl(valueRaw) : valueRaw;
-  const payload = { title, type, value };
+  let value = valueRaw;
+  if (type === "link") value = normalizeUrl(valueRaw);
+
+  const payload = {
+    title,
+    type,
+    value,
+    name: title,
+    label: title
+  };
+
+  if (type === "call") {
+    payload.phone = value;
+    payload.tel = value;
+  }
+
+  if (type === "link") {
+    payload.url = value;
+    payload.link = value;
+  }
+
+  if (type === "map") {
+    const parts = String(value).split(",");
+    if (parts.length >= 2) {
+      const lat = Number(parts[0].trim());
+      const lng = Number(parts[1].trim());
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        payload.lat = lat;
+        payload.lng = lng;
+      }
+    }
+  }
 
   try {
     if (editingUtilityKey) {
-      await db.ref("utilities/" + editingUtilityKey).set(payload);
+      await db.ref("utilities/" + editingUtilityKey).update(payload);
       editingUtilityKey = null;
       document.getElementById("utilityMode").textContent = "Chế độ: Thêm mới";
       alert("Đã cập nhật tiện ích.");
@@ -924,8 +1124,10 @@ async function saveUtility() {
 function editUtility(key) {
   requireAdmin();
 
-  const u = allUtilityData[key];
-  if (!u) return;
+  const raw = allUtilityData[key];
+  if (!raw) return;
+
+  const u = normalizeUtilityRecord(raw);
 
   editingUtilityKey = key;
   document.getElementById("utilityMode").textContent = "Chế độ: Sửa";
@@ -938,10 +1140,13 @@ function editUtility(key) {
 
 async function deleteUtility(key) {
   requireAdmin();
+  ensureDb();
 
-  const u = allUtilityData[key];
-  if (!u) return;
-  if (!confirm(`Xóa tiện ích "${u.title}"?`)) return;
+  const raw = allUtilityData[key];
+  const title = normalizeUtilityRecord(raw).title;
+
+  if (!raw) return;
+  if (!confirm(`Xóa tiện ích "${title}"?`)) return;
 
   try {
     await db.ref("utilities/" + key).remove();
@@ -954,10 +1159,16 @@ async function deleteUtility(key) {
 
 function resetUtilityForm() {
   editingUtilityKey = null;
-  document.getElementById("utilityMode").textContent = "Chế độ: Thêm mới";
-  document.getElementById("utilTitle").value = "";
-  document.getElementById("utilType").value = "call";
-  document.getElementById("utilValue").value = "";
+  const modeEl = document.getElementById("utilityMode");
+  if (modeEl) modeEl.textContent = "Chế độ: Thêm mới";
+
+  const titleEl = document.getElementById("utilTitle");
+  const typeEl = document.getElementById("utilType");
+  const valueEl = document.getElementById("utilValue");
+
+  if (titleEl) titleEl.value = "";
+  if (typeEl) typeEl.value = "call";
+  if (valueEl) valueEl.value = "";
 }
 
 /* =========================
@@ -969,13 +1180,11 @@ function applyAdminUi(user) {
   const adminAuth = document.getElementById("adminAuth");
   const adminPanel = document.getElementById("adminPanel");
   const btnLogout = document.getElementById("btnLogout");
-  const adminTabBtn = document.querySelector('.tabbtn[data-tab="admin"]');
 
   if (isAdmin) {
     if (adminAuth) adminAuth.style.display = "none";
     if (adminPanel) adminPanel.style.display = "block";
     if (btnLogout) btnLogout.style.display = "inline-flex";
-    if (adminTabBtn) adminTabBtn.style.display = "inline-flex";
 
     hydrateCloudinarySettings();
     renderLocations();
@@ -989,11 +1198,12 @@ function applyAdminUi(user) {
     if (adminAuth) adminAuth.style.display = "block";
     if (adminPanel) adminPanel.style.display = "none";
     if (btnLogout) btnLogout.style.display = "none";
-    if (adminTabBtn) adminTabBtn.style.display = "inline-flex";
   }
 }
 
 async function loginAdmin() {
+  ensureAuth();
+
   const email = (document.getElementById("adminEmail")?.value || "").trim();
   const pass = (document.getElementById("adminPass")?.value || "").trim();
 
@@ -1016,16 +1226,12 @@ async function loginAdmin() {
     alert("✅ Admin đã đăng nhập.");
   } catch (err) {
     console.error("Firebase login error:", err);
-
-    // 👇 HIỆN LỖI THẬT
-    setAdminAuthStatus(
-      `Lỗi: ${err.code || "unknown"} - ${err.message || ""}`,
-      true
-    );
+    setAdminAuthStatus(`Lỗi: ${err.code || "unknown"} - ${err.message || ""}`, true);
   }
 }
 
 async function logoutAdmin() {
+  ensureAuth();
   try {
     await auth.signOut();
     alert("Đã đăng xuất admin.");
@@ -1036,6 +1242,8 @@ async function logoutAdmin() {
 }
 
 async function sendAdminPasswordReset() {
+  ensureAuth();
+
   const email = (document.getElementById("adminEmail")?.value || "").trim();
   if (!email) {
     setAdminAuthStatus("Nhập email admin để gửi link đặt lại mật khẩu.", true);
@@ -1052,54 +1260,70 @@ async function sendAdminPasswordReset() {
   }
 }
 
-auth.onAuthStateChanged((user) => {
-  applyAdminUi(user);
+function bindAuthListener() {
+  if (!auth) return;
 
-  if (!isAdminUser(user)) {
-    editingLocationKey = null;
-    editingUtilityKey = null;
-    editingNewsKey = null;
-    editingHomeCardKey = null;
+  auth.onAuthStateChanged((user) => {
+    applyAdminUi(user);
 
-    const passEl = document.getElementById("adminPass");
-    if (passEl) passEl.value = "";
+    if (!isAdminUser(user)) {
+      editingLocationKey = null;
+      editingUtilityKey = null;
+      editingNewsKey = null;
+      editingHomeCardKey = null;
 
-    resetLocationForm();
-    resetUtilityForm();
-    resetNewsForm();
-    resetHomeCardForm();
-    renderLocations();
-    renderUtilities();
-  }
-});
+      const passEl = document.getElementById("adminPass");
+      if (passEl) passEl.value = "";
+
+      resetLocationForm();
+      resetUtilityForm();
+      resetNewsForm();
+      resetHomeCardForm();
+      renderLocations();
+      renderUtilities();
+    }
+  });
+}
 
 /* =========================
    Firebase listeners
 ========================= */
-db.ref("siteContent").on("value", (snap) => {
-  siteContentData = snap.val() || {
-    logoUrl: "",
-    heroMediaType: "image",
-    heroMediaUrl: "",
-    homeCards: {}
-  };
+function bindSiteContentListener() {
+  if (!db) return;
 
-  renderSiteLogo();
-  renderHeroMedia();
-  renderHomeCards();
-  renderAdminHomeCards();
-});
+  db.ref("siteContent").on("value", (snap) => {
+    siteContentData = snap.val() || {
+      logoUrl: "",
+      heroMediaType: "image",
+      heroMediaUrl: "",
+      homeCards: {}
+    };
 
-db.ref("news").on("value", (snap) => {
-  const obj = {};
-  snap.forEach(child => {
-    obj[child.key] = child.val();
+    renderSiteLogo();
+    renderHeroMedia();
+    renderHomeCards();
+    renderAdminHomeCards();
+  }, (err) => {
+    console.error("Lỗi đọc siteContent:", err);
   });
+}
 
-  newsData = obj;
-  renderLatestNews();
-  renderAdminNews();
-});
+function bindNewsListener() {
+  if (!db) return;
+
+  db.ref("news").on("value", (snap) => {
+    const obj = {};
+    snap.forEach(child => {
+      obj[child.key] = child.val();
+    });
+
+    newsData = obj;
+    renderLatestNews();
+    renderAdminNews();
+  }, (err) => {
+    console.error("Lỗi đọc news:", err);
+  });
+}
 
 /* =========================
    Site logo
@@ -1107,11 +1331,24 @@ db.ref("news").on("value", (snap) => {
 function renderSiteLogo() {
   const logoEl = document.getElementById("siteLogo");
   if (!logoEl) return;
-  if (siteContentData.logoUrl) logoEl.src = siteContentData.logoUrl;
+
+  const defaultSrc =
+    logoEl.getAttribute("data-default-src") ||
+    logoEl.getAttribute("src") ||
+    "https://dummyimage.com/96x96/e5eefb/1831ae.png&text=Logo";
+
+  const logoUrl =
+    siteContentData?.logoUrl ||
+    siteContentData?.logo ||
+    siteContentData?.siteLogo ||
+    "";
+
+  logoEl.src = logoUrl || defaultSrc;
 }
 
 async function uploadSiteLogo() {
   requireAdmin();
+  ensureDb();
 
   const input = document.getElementById("logoFile");
   const file = input?.files?.[0];
@@ -1122,7 +1359,11 @@ async function uploadSiteLogo() {
   try {
     if (status) status.textContent = "Đang tải logo lên...";
     const url = await uploadFileToCloudinary(file, "image");
-    await db.ref("siteContent/logoUrl").set(url);
+    await db.ref("siteContent").update({
+      logoUrl: url,
+      logo: url,
+      siteLogo: url
+    });
     if (status) status.textContent = "Đã cập nhật logo.";
     input.value = "";
   } catch (err) {
@@ -1194,6 +1435,7 @@ async function uploadHeroMedia() {
 
 async function saveHeroMedia() {
   requireAdmin();
+  ensureDb();
 
   const type = document.getElementById("heroMediaType")?.value || "image";
   const rawUrl = (document.getElementById("heroMediaUrl")?.value || "").trim();
@@ -1225,20 +1467,15 @@ function renderHomeCards() {
   const cards = Object.entries(siteContentData.homeCards || {});
   if (!cards.length) return;
 
-  box.innerHTML = cards
-    .slice(0, 3)
-    .map(([, item]) => `
-      <div class="info-card">
-        ${
-          item.imageUrl
-            ? `<img class="home-card-image" src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "")}">`
-            : `<div class="info-card__thumb">Hình ảnh</div>`
-        }
-        <h4>${escapeHtml(item.title || "")}</h4>
-        <p>${escapeHtml(item.desc || "")}</p>
-      </div>
-    `)
-    .join("");
+  box.innerHTML = cards.slice(0, 3).map(([, item]) => `
+    <div class="info-card">
+      ${item.imageUrl
+        ? `<img class="home-card-image" src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "")}">`
+        : `<div class="info-card__thumb">Hình ảnh</div>`}
+      <h4>${escapeHtml(item.title || "")}</h4>
+      <p>${escapeHtml(item.desc || "")}</p>
+    </div>
+  `).join("");
 }
 
 function renderAdminHomeCards() {
@@ -1253,11 +1490,11 @@ function renderAdminHomeCards() {
 
   box.innerHTML = cards.map(([key, item]) => `
     <div class="item-card">
-      <div style="font-weight:900;color:#1831AE;">${escapeHtml(item.title || "")}</div>
+      <div style="font-weight:800;color:#0B4F8A;">${escapeHtml(item.title || "")}</div>
       <div class="small muted" style="margin-top:4px;">${escapeHtml(item.desc || "")}</div>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button class="btn btn-ghost" onclick="editHomeCard('${key}')">Sửa</button>
-        <button class="btn" style="background:linear-gradient(135deg,#F63E1D,#EF4444);" onclick="deleteHomeCard('${key}')">Xóa</button>
+        <button class="btn btn-danger" onclick="deleteHomeCard('${key}')">Xóa</button>
       </div>
     </div>
   `).join("");
@@ -1287,6 +1524,7 @@ async function uploadHomeCardImage() {
 
 async function saveHomeCard() {
   requireAdmin();
+  ensureDb();
 
   const title = (document.getElementById("homeCardTitle")?.value || "").trim();
   const desc = (document.getElementById("homeCardDesc")?.value || "").trim();
@@ -1329,6 +1567,8 @@ function editHomeCard(key) {
 
 async function deleteHomeCard(key) {
   requireAdmin();
+  ensureDb();
+
   if (!confirm("Xóa khối hình này?")) return;
 
   try {
@@ -1342,8 +1582,7 @@ async function deleteHomeCard(key) {
 
 function resetHomeCardForm() {
   editingHomeCardKey = null;
-  const ids = ["homeCardTitle", "homeCardDesc", "homeCardImageUrl", "homeCardFile"];
-  ids.forEach(id => {
+  ["homeCardTitle", "homeCardDesc", "homeCardImageUrl", "homeCardFile"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = "";
   });
@@ -1358,8 +1597,7 @@ function renderLatestNews() {
   const box = document.getElementById("latestNewsList");
   if (!box) return;
 
-  const items = Object.entries(newsData)
-    .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+  const items = Object.entries(newsData).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
 
   if (!items.length) {
     box.innerHTML = `<div class="small muted">Chưa có bản tin mới.</div>`;
@@ -1379,8 +1617,7 @@ function renderAdminNews() {
   const box = document.getElementById("adminNewsList");
   if (!box) return;
 
-  const items = Object.entries(newsData)
-    .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+  const items = Object.entries(newsData).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
 
   if (!items.length) {
     box.innerHTML = `<div class="small muted">Chưa có bản tin.</div>`;
@@ -1389,11 +1626,11 @@ function renderAdminNews() {
 
   box.innerHTML = items.map(([key, item]) => `
     <div class="item-card">
-      <div style="font-weight:900;color:#1831AE;">${escapeHtml(item.title || "")}</div>
+      <div style="font-weight:800;color:#0B4F8A;">${escapeHtml(item.title || "")}</div>
       <div class="small muted" style="margin-top:4px;">${escapeHtml(item.desc || "")}</div>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button class="btn btn-ghost" onclick="editNewsItem('${key}')">Sửa</button>
-        <button class="btn" style="background:linear-gradient(135deg,#F63E1D,#EF4444);" onclick="deleteNewsItem('${key}')">Xóa</button>
+        <button class="btn btn-danger" onclick="deleteNewsItem('${key}')">Xóa</button>
       </div>
     </div>
   `).join("");
@@ -1401,6 +1638,7 @@ function renderAdminNews() {
 
 async function saveNewsItem() {
   requireAdmin();
+  ensureDb();
 
   const title = (document.getElementById("newsTitle")?.value || "").trim();
   const desc = (document.getElementById("newsDesc")?.value || "").trim();
@@ -1447,6 +1685,8 @@ function editNewsItem(key) {
 
 async function deleteNewsItem(key) {
   requireAdmin();
+  ensureDb();
+
   if (!confirm("Xóa bản tin này?")) return;
 
   try {
@@ -1460,22 +1700,301 @@ async function deleteNewsItem(key) {
 
 function resetNewsForm() {
   editingNewsKey = null;
-  const ids = ["newsTitle", "newsDesc", "newsLink"];
-  ids.forEach(id => {
+  ["newsTitle", "newsDesc", "newsLink"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = "";
   });
 }
 
 /* =========================
+   Chatbot + Voice
+========================= */
+function hasChatbotBackend() {
+  return typeof CHATBOT_API_URL === "string" && CHATBOT_API_URL.trim() !== "";
+}
+
+function toggleChatbot(forceValue) {
+  const panel = document.getElementById("chatbotPanel");
+  if (!panel) return;
+  chatbotOpen = typeof forceValue === "boolean" ? forceValue : !chatbotOpen;
+  panel.classList.toggle("open", chatbotOpen);
+}
+
+function addChatMessage(role, text) {
+  const box = document.getElementById("chatbotMessages");
+  if (!box) return;
+
+  const div = document.createElement("div");
+  div.className = `chat-msg ${role === "user" ? "user" : "bot"}`;
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function setChatbotStatus(text = "", isError = false) {
+  const box = document.getElementById("chatbotStatus");
+  if (!box) return;
+  box.textContent = text;
+  box.style.color = isError ? "#b42318" : "#64748B";
+}
+
+function clearChatMessages() {
+  const box = document.getElementById("chatbotMessages");
+  if (!box) return;
+  box.innerHTML = `<div class="chat-msg bot">Xin chào, tôi có thể hỗ trợ tra cứu địa điểm, tiện ích và nội dung trong website.</div>`;
+  chatHistory = [];
+  setChatbotStatus("");
+}
+
+function handleChatInputKeydown(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendChatMessage();
+  }
+}
+
+function buildChatbotContext() {
+  const locations = Object.values(allLocationData).map(d => ({
+    name: d.name || "",
+    category: safeCategoryName(d.category),
+    desc: d.desc || "",
+    lat: Number(d.lat),
+    lng: Number(d.lng)
+  }));
+
+  const utilities = Object.values(allUtilityData).map(u => {
+    const item = normalizeUtilityRecord(u);
+    return { title: item.title, type: item.type, value: item.value };
+  });
+
+  const news = Object.values(newsData)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, 10)
+    .map(item => ({
+      title: item.title || "",
+      desc: item.desc || "",
+      link: item.link || ""
+    }));
+
+  return { siteName: "Đoàn Thanh Niên Phường Hà Tu", locations, utilities, news };
+}
+
+function answerLocally(message) {
+  const q = slugifyText(message);
+  const ctx = buildChatbotContext();
+
+  if (!q) return "Anh/chị vui lòng nhập nội dung cần tra cứu.";
+
+  if (q.includes("xin chao") || q.includes("chao")) {
+    return "Xin chào. Tôi có thể hỗ trợ tra cứu địa điểm, tiện ích và bản tin trên cổng thông tin.";
+  }
+
+  if (q.includes("dia diem") || q.includes("vi tri") || q.includes("ban do") || q.includes("ghim")) {
+    if (!ctx.locations.length) return "Hiện hệ thống chưa có dữ liệu địa điểm.";
+    const names = ctx.locations.slice(0, 5).map(x => x.name).filter(Boolean);
+    return `Hiện hệ thống có ${ctx.locations.length} địa điểm. Một số địa điểm tiêu biểu: ${names.join(", ")}.`;
+  }
+
+  if (q.includes("tien ich") || q.includes("goi") || q.includes("lien ket")) {
+    if (!ctx.utilities.length) return "Hiện hệ thống chưa có dữ liệu tiện ích.";
+    const names = ctx.utilities.slice(0, 5).map(x => x.title).filter(Boolean);
+    return `Hiện có ${ctx.utilities.length} tiện ích sẵn sàng sử dụng, gồm: ${names.join(", ")}.`;
+  }
+
+  if (q.includes("ban tin") || q.includes("thong bao") || q.includes("tin moi") || q.includes("news")) {
+    if (!ctx.news.length) return "Hiện chưa có bản tin mới.";
+    return `Bản tin mới nhất là: ${ctx.news[0].title || "Chưa có tiêu đề"}.`;
+  }
+
+  const matchedLocation = ctx.locations.find(loc => {
+    const hay = slugifyText(`${loc.name} ${loc.category} ${loc.desc}`);
+    const name = slugifyText(loc.name);
+    return hay.includes(q) || q.includes(name);
+  });
+
+  if (matchedLocation) {
+    return `Địa điểm ${matchedLocation.name} thuộc nhóm ${matchedLocation.category}. ${matchedLocation.desc ? matchedLocation.desc : "Hiện chưa có mô tả chi tiết."}`;
+  }
+
+  const matchedUtility = ctx.utilities.find(util => {
+    const hay = slugifyText(`${util.title} ${util.type} ${util.value}`);
+    return hay.includes(q) || q.includes(slugifyText(util.title));
+  });
+
+  if (matchedUtility) {
+    return `Tiện ích ${matchedUtility.title} thuộc loại ${matchedUtility.type}. Giá trị hiện có: ${matchedUtility.value || "chưa cập nhật"}.`;
+  }
+
+  return "Tôi chưa tìm thấy nội dung phù hợp. Anh/chị có thể hỏi về địa điểm, tiện ích hoặc bản tin trên hệ thống.";
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById("chatbotInput");
+  if (!input) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  toggleChatbot(true);
+  addChatMessage("user", message);
+  input.value = "";
+  setChatbotStatus("Đang xử lý câu hỏi...");
+
+  const payload = {
+    message,
+    history: chatHistory.slice(-8),
+    context: buildChatbotContext()
+  };
+
+  let reply = "";
+
+  try {
+    if (hasChatbotBackend()) {
+      const response = await fetch(CHATBOT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Chat API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      reply = String(data.reply || "").trim();
+    }
+
+    if (!reply) {
+      reply = answerLocally(message);
+      setChatbotStatus("Đang dùng trợ lý tra cứu nội bộ.");
+    } else {
+      setChatbotStatus("");
+    }
+  } catch (err) {
+    console.warn("Chatbot backend lỗi, chuyển sang trợ lý nội bộ:", err);
+    reply = answerLocally(message);
+    setChatbotStatus("Không kết nối được máy chủ AI, đang dùng trợ lý nội bộ.");
+  }
+
+  addChatMessage("bot", reply);
+  chatHistory.push({ role: "user", content: message });
+  chatHistory.push({ role: "assistant", content: reply });
+
+  try {
+    speakBotReply(reply);
+  } catch (e) {
+    console.warn("Không thể phát âm thanh phản hồi:", e);
+  }
+}
+
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "vi-VN";
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  recognition.onstart = () => {
+    isVoiceListening = true;
+    setChatbotStatus("Đang nghe giọng nói...");
+    const btn = document.getElementById("voiceBtn");
+    if (btn) btn.textContent = "⏺ Đang nghe";
+  };
+
+  recognition.onresult = (event) => {
+    let transcript = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    const input = document.getElementById("chatbotInput");
+    if (input) input.value = transcript.trim();
+  };
+
+  recognition.onerror = () => {
+    setChatbotStatus("Không nhận được giọng nói hoặc trình duyệt chưa hỗ trợ.", true);
+  };
+
+  recognition.onend = () => {
+    isVoiceListening = false;
+    const btn = document.getElementById("voiceBtn");
+    if (btn) btn.textContent = "🎤 Nói";
+    if (!document.getElementById("chatbotInput")?.value.trim()) {
+      setChatbotStatus("Đã dừng ghi âm.");
+    } else {
+      setChatbotStatus("Đã nhận giọng nói. Bạn có thể bấm Gửi.");
+    }
+  };
+
+  return recognition;
+}
+
+function toggleVoiceInput() {
+  toggleChatbot(true);
+
+  if (!speechRecognition) speechRecognition = initSpeechRecognition();
+  if (!speechRecognition) {
+    setChatbotStatus("Trình duyệt này chưa hỗ trợ nhập giọng nói.", true);
+    return;
+  }
+
+  try {
+    if (isVoiceListening) speechRecognition.stop();
+    else speechRecognition.start();
+  } catch (err) {
+    console.error(err);
+    setChatbotStatus("Không thể khởi động microphone.", true);
+  }
+}
+
+function speakBotReply(text) {
+  if (!("speechSynthesis" in window)) return;
+
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "vi-VN";
+    utter.rate = 1;
+    window.speechSynthesis.speak(utter);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+/* =========================
    Init
 ========================= */
 window.addEventListener("load", () => {
+  initMap();
   showTab("home");
   hydrateCloudinarySettings();
   renderLocationPreview();
+  clearChatMessages();
 
   setTimeout(() => {
-    map.invalidateSize();
+    if (map && typeof map.invalidateSize === "function") {
+      map.invalidateSize();
+    }
   }, 300);
+
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") searchPlace();
+    });
+  }
+
+  const locationSearchInput = document.getElementById("locationSearchInput");
+  if (locationSearchInput) {
+    locationSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") searchPlaceFromLocations();
+    });
+  }
+
+  bindLocationListener();
+  bindUtilityListener();
+  bindSiteContentListener();
+  bindNewsListener();
+  bindAuthListener();
 });
